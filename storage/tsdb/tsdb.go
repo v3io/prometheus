@@ -27,16 +27,23 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/tsdb"
 	tsdbLabels "github.com/prometheus/tsdb/labels"
+	"github.com/v3io/v3io-tsdb"
+	"github.com/v3io/v3io-tsdb/config"
+	"fmt"
 )
 
 // ErrNotReady is returned if the underlying storage is not ready yet.
 var ErrNotReady = errors.New("TSDB not ready")
+
+// V3IO TSDB Adapter
+var v3ioadp v3io_tsdb.V3ioAdapter
 
 // ReadyStorage implements the Storage interface while allowing to set the actual
 // storage at a later point in time.
 type ReadyStorage struct {
 	mtx sync.RWMutex
 	a   *adapter
+	v3a storage.Storage //NEW
 }
 
 // Set the storage.
@@ -45,6 +52,8 @@ func (s *ReadyStorage) Set(db *tsdb.DB, startTimeMargin int64) {
 	defer s.mtx.Unlock()
 
 	s.a = &adapter{db: db, startTimeMargin: startTimeMargin}
+
+	s.v3a = v3ioadp
 }
 
 // Get the storage.
@@ -72,6 +81,13 @@ func (s *ReadyStorage) StartTime() (int64, error) {
 
 // Querier implements the Storage interface.
 func (s *ReadyStorage) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+
+	// Initialize V3IO Querier
+	fmt.Printf("Q")
+	if s.v3a != nil {
+		return s.v3a.Querier(ctx, mint, maxt) //NEW
+	}
+
 	if x := s.get(); x != nil {
 		return x.Querier(ctx, mint, maxt)
 	}
@@ -80,6 +96,13 @@ func (s *ReadyStorage) Querier(ctx context.Context, mint, maxt int64) (storage.Q
 
 // Appender implements the Storage interface.
 func (s *ReadyStorage) Appender() (storage.Appender, error) {
+
+	fmt.Printf(".")
+	// Initialize V3IO Appender
+	if s.v3a != nil {
+		return s.v3a.Appender() //NEW
+	}
+
 	if x := s.get(); x != nil {
 		return x.Appender()
 	}
@@ -126,6 +149,22 @@ type Options struct {
 
 // Open returns a new storage backed by a TSDB database that is configured for Prometheus.
 func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*tsdb.DB, error) {
+
+
+	// Initialize V3IO Adapter
+	cfg, err := config.LoadConfig("v3io.yaml")
+	if err != nil {
+		return nil, err
+	}
+
+	v3ioadp = v3io_tsdb.NewV3ioAdapter(cfg, nil, nil)  //NEW
+	err = v3ioadp.Start()
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: remove the tsdb.DB init
+
 	if opts.MinBlockDuration > opts.MaxBlockDuration {
 		opts.MaxBlockDuration = opts.MinBlockDuration
 	}
