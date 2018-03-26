@@ -36,7 +36,7 @@ import (
 var ErrNotReady = errors.New("TSDB not ready")
 
 // V3IO TSDB Adapter
-var v3ioadp v3io_tsdb.V3ioAdapter
+var v3ioadp *v3io_tsdb.V3ioAdapter
 
 // ReadyStorage implements the Storage interface while allowing to set the actual
 // storage at a later point in time.
