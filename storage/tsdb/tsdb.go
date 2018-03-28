@@ -157,10 +157,12 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 		return nil, err
 	}
 
-	v3ioadp = v3io_tsdb.NewV3ioAdapter(cfg, nil, nil)  //NEW
-	err = v3ioadp.Start()
-	if err != nil {
-		return nil, err
+	if !cfg.Disabled {
+		v3ioadp = v3io_tsdb.NewV3ioAdapter(cfg, nil, nil)  //NEW
+		err = v3ioadp.Start()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// TODO: remove the tsdb.DB init
