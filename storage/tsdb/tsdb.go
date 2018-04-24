@@ -27,16 +27,16 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/tsdb"
 	tsdbLabels "github.com/prometheus/tsdb/labels"
-	"github.com/v3io/v3io-tsdb"
 	"github.com/v3io/v3io-tsdb/config"
 	"fmt"
+	"github.com/v3io/v3io-tsdb/promtsdb"
 )
 
 // ErrNotReady is returned if the underlying storage is not ready yet.
 var ErrNotReady = errors.New("TSDB not ready")
 
 // V3IO TSDB Adapter
-var v3ioadp *v3io_tsdb.V3ioAdapter
+var v3ioadp *promtsdb.V3ioPromAdapter
 
 // ReadyStorage implements the Storage interface while allowing to set the actual
 // storage at a later point in time.
@@ -158,7 +158,7 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 	}
 
 	if !cfg.Disabled {
-		v3ioadp = v3io_tsdb.NewV3ioAdapter(cfg, nil, nil)  //NEW
+		v3ioadp = promtsdb.NewV3ioProm(cfg, nil, nil)  //NEW
 		err = v3ioadp.Start()
 		if err != nil {
 			return nil, err
