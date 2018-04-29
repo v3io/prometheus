@@ -30,6 +30,7 @@ import (
 	"github.com/v3io/v3io-tsdb/config"
 	"fmt"
 	"github.com/v3io/v3io-tsdb/promtsdb"
+	"os"
 )
 
 // ErrNotReady is returned if the underlying storage is not ready yet.
@@ -152,7 +153,11 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 
 
 	// Initialize V3IO Adapter
-	cfg, err := config.LoadConfig("v3io.yaml")
+	cfgpath := os.Getenv("V3IO_FILE_PATH")
+	if cfgpath == "" {
+		cfgpath = "v3io.yaml"
+	}
+	cfg, err := config.LoadConfig(cfgpath)
 	if err != nil {
 		return nil, err
 	}
