@@ -163,8 +163,7 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 	}
 
 	if !cfg.Disabled {
-		v3ioadp = promtsdb.NewV3ioProm(cfg, nil, nil)  //NEW
-		err = v3ioadp.Start()
+		v3ioadp, err = promtsdb.NewV3ioProm(cfg, nil, nil)  //NEW
 		if err != nil {
 			return nil, err
 		}
