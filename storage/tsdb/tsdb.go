@@ -155,7 +155,7 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 	// Initialize V3IO Adapter
 	cfgpath := os.Getenv("V3IO_FILE_PATH")
 	if cfgpath == "" {
-		cfgpath = "v3io.yaml"
+		cfgpath = "/etc/v3io/v3io.yaml"
 	}
 	cfg, err := config.LoadConfig(cfgpath)
 	if err != nil {
