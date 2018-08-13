@@ -27,7 +27,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/tsdb"
 	tsdbLabels "github.com/prometheus/tsdb/labels"
-	"github.com/v3io/v3io-tsdb/config"
+	"github.com/v3io/v3io-tsdb/pkg/config"
 	"fmt"
 	"github.com/v3io/v3io-tsdb/promtsdb"
 	"os"
