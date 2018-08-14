@@ -19,6 +19,7 @@ import (
 	"time"
 	"unsafe"
 
+	"fmt"
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -28,7 +29,6 @@ import (
 	"github.com/prometheus/tsdb"
 	tsdbLabels "github.com/prometheus/tsdb/labels"
 	"github.com/v3io/v3io-tsdb/pkg/config"
-	"fmt"
 	"github.com/v3io/v3io-tsdb/promtsdb"
 	"os"
 )
@@ -151,7 +151,6 @@ type Options struct {
 // Open returns a new storage backed by a TSDB database that is configured for Prometheus.
 func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*tsdb.DB, error) {
 
-
 	// Initialize V3IO Adapter
 	cfgpath := os.Getenv("V3IO_FILE_PATH")
 	if cfgpath == "" {
@@ -163,7 +162,7 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 	}
 
 	if !cfg.Disabled {
-		v3ioadp, err = promtsdb.NewV3ioProm(cfg, nil, nil)  //NEW
+		v3ioadp, err = promtsdb.NewV3ioProm(cfg, nil, nil) //NEW
 		if err != nil {
 			return nil, err
 		}
