@@ -55,7 +55,7 @@ test-short:
 	@echo ">> running short tests"
 	@$(GO) test -short $(shell $(GO) list ./... | grep -v /vendor/ | grep -v examples)
 
-test:
+test: updatetsdb
 	@echo ">> running all tests"
 	@$(GO) test -race $(shell $(GO) list ./... | grep -v /vendor/ | grep -v examples)
 
