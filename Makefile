@@ -21,7 +21,7 @@ STATICCHECK_IGNORE = \
   github.com/prometheus/prometheus/pkg/pool/pool.go:SA6002 \
   github.com/prometheus/prometheus/promql/engine.go:SA6002
 
-all: format staticcheck unused updatetsdb build test
+all: format staticcheck unused build test
 
 ifdef DEBUG
 	bindata_flags = -debug
@@ -33,14 +33,5 @@ assets:
 	@$(GO) get -u github.com/jteeuwen/go-bindata/...
 	@go-bindata $(bindata_flags) -pkg ui -o web/ui/bindata.go -ignore '(.*\.map|bootstrap\.js|bootstrap-theme\.css|bootstrap\.css)'  web/ui/templates/... web/ui/static/...
 	@$(GO) fmt ./web/ui
-v3ioconfig:
-	@echo ">> creating v3io configuration"
-	@echo "disabled: true" > /tmp/v3io-tsdb.yaml
-
-updatetsdb:
-	@echo ">> fetching V3IO TSDB"
-	@$(GO) get -u github.com/v3io/v3io-tsdb/...
-
-v3iotsdb: updatetsdb v3ioconfig
 
 .PHONY: all style check_license format updatetsdb v3ioconfig v3iotsdb build test vet assets tarball docker promu staticcheck $(FIRST_GOPATH)/bin/staticcheck govendor $(FIRST_GOPATH)/bin/govendor
