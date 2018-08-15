@@ -61,14 +61,12 @@ import (
 
 var (
 	configSuccess = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "prometheus",
-		Name:      "config_last_reload_successful",
-		Help:      "Whether the last configuration reload attempt was successful.",
+		Name: "prometheus_config_last_reload_successful",
+		Help: "Whether the last configuration reload attempt was successful.",
 	})
 	configSuccessTime = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "prometheus",
-		Name:      "config_last_reload_success_timestamp_seconds",
-		Help:      "Timestamp of the last successful configuration reload.",
+		Name: "prometheus_config_last_reload_success_timestamp_seconds",
+		Help: "Timestamp of the last successful configuration reload.",
 	})
 )
 
@@ -85,15 +83,18 @@ func main() {
 	cfg := struct {
 		configFile string
 
-		localStoragePath string
-		notifier         notifier.Options
-		notifierTimeout  model.Duration
-		web              web.Options
-		tsdb             tsdb.Options
-		lookbackDelta    model.Duration
-		webTimeout       model.Duration
-		queryTimeout     model.Duration
-		queryConcurrency int
+		localStoragePath    string
+		notifier            notifier.Options
+		notifierTimeout     model.Duration
+		forGracePeriod      model.Duration
+		outageTolerance     model.Duration
+		web                 web.Options
+		tsdb                tsdb.Options
+		lookbackDelta       model.Duration
+		webTimeout          model.Duration
+		queryTimeout        model.Duration
+		queryConcurrency    int
+		RemoteFlushDeadline model.Duration
 
 		prometheusURL string
 
@@ -137,7 +138,7 @@ func main() {
 	a.Flag("web.enable-lifecycle", "Enable shutdown and reload via HTTP request.").
 		Default("false").BoolVar(&cfg.web.EnableLifecycle)
 
-	a.Flag("web.enable-admin-api", "Enables API endpoints for admin control actions.").
+	a.Flag("web.enable-admin-api", "Enable API endpoints for admin control actions.").
 		Default("false").BoolVar(&cfg.web.EnableAdminAPI)
 
 	a.Flag("web.console.templates", "Path to the console template directory, available at /consoles.").
@@ -156,13 +157,22 @@ func main() {
 		"Maximum duration compacted blocks may span. For use in testing. (Defaults to 10% of the retention period).").
 		Hidden().PlaceHolder("<duration>").SetValue(&cfg.tsdb.MaxBlockDuration)
 
-	a.Flag("storage.tsdb.retention", "How long to retain samples in the storage.").
+	a.Flag("storage.tsdb.retention", "How long to retain samples in storage.").
 		Default("15d").SetValue(&cfg.tsdb.Retention)
 
 	a.Flag("storage.tsdb.no-lockfile", "Do not create lockfile in data directory.").
 		Default("false").BoolVar(&cfg.tsdb.NoLockfile)
 
-	a.Flag("alertmanager.notification-queue-capacity", "The capacity of the queue for pending alert manager notifications.").
+	a.Flag("storage.remote.flush-deadline", "How long to wait flushing sample on shutdown or config reload.").
+		Default("1m").PlaceHolder("<duration>").SetValue(&cfg.RemoteFlushDeadline)
+
+	a.Flag("rules.alert.for-outage-tolerance", "Max time to tolerate prometheus outage for restoring 'for' state of alert.").
+		Default("1h").SetValue(&cfg.outageTolerance)
+
+	a.Flag("rules.alert.for-grace-period", "Minimum duration between alert and restored 'for' state. This is maintained only for alerts with configured 'for' time greater than grace period.").
+		Default("10m").SetValue(&cfg.forGracePeriod)
+
+	a.Flag("alertmanager.notification-queue-capacity", "The capacity of the queue for pending Alertmanager notifications.").
 		Default("10000").IntVar(&cfg.notifier.QueueCapacity)
 
 	a.Flag("alertmanager.timeout", "Timeout for sending alerts to Alertmanager.").
@@ -221,10 +231,11 @@ func main() {
 	level.Info(logger).Log("build_context", version.BuildContext())
 	level.Info(logger).Log("host_details", Uname())
 	level.Info(logger).Log("fd_limits", FdLimits())
+	level.Info(logger).Log("vm_limits", VmLimits())
 
 	var (
 		localStorage  = &tsdb.ReadyStorage{}
-		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), localStorage.StartTime)
+		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), localStorage.StartTime, time.Duration(cfg.RemoteFlushDeadline))
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 
@@ -250,13 +261,16 @@ func main() {
 		)
 
 		ruleManager = rules.NewManager(&rules.ManagerOptions{
-			Appendable:  fanoutStorage,
-			QueryFunc:   rules.EngineQueryFunc(queryEngine, fanoutStorage),
-			NotifyFunc:  sendAlerts(notifier, cfg.web.ExternalURL.String()),
-			Context:     ctxRule,
-			ExternalURL: cfg.web.ExternalURL,
-			Registerer:  prometheus.DefaultRegisterer,
-			Logger:      log.With(logger, "component", "rule manager"),
+			Appendable:      fanoutStorage,
+			TSDB:            localStorage,
+			QueryFunc:       rules.EngineQueryFunc(queryEngine, fanoutStorage),
+			NotifyFunc:      sendAlerts(notifier, cfg.web.ExternalURL.String()),
+			Context:         ctxRule,
+			ExternalURL:     cfg.web.ExternalURL,
+			Registerer:      prometheus.DefaultRegisterer,
+			Logger:          log.With(logger, "component", "rule manager"),
+			OutageTolerance: time.Duration(cfg.outageTolerance),
+			ForGracePeriod:  time.Duration(cfg.forGracePeriod),
 		})
 	)
 
@@ -363,6 +377,7 @@ func main() {
 
 	var g group.Group
 	{
+		// Termination handler.
 		term := make(chan os.Signal)
 		signal.Notify(term, os.Interrupt, syscall.SIGTERM)
 		cancel := make(chan struct{})
@@ -388,6 +403,7 @@ func main() {
 		)
 	}
 	{
+		// Scrape discovery manager.
 		g.Add(
 			func() error {
 				err := discoveryManagerScrape.Run()
@@ -401,6 +417,7 @@ func main() {
 		)
 	}
 	{
+		// Notify discovery manager.
 		g.Add(
 			func() error {
 				err := discoveryManagerNotify.Run()
@@ -414,6 +431,7 @@ func main() {
 		)
 	}
 	{
+		// Scrape manager.
 		g.Add(
 			func() error {
 				// When the scrape manager receives a new targets list
@@ -435,6 +453,8 @@ func main() {
 		)
 	}
 	{
+		// Reload handler.
+
 		// Make sure that sighup handler is registered with a redirect to the channel before the potentially
 		// long and synchronous tsdb init.
 		hup := make(chan os.Signal)
@@ -464,11 +484,14 @@ func main() {
 
 			},
 			func(err error) {
-				close(cancel)
+				// Wait for any in-progress reloads to complete to avoid
+				// reloading things after they have been shutdown.
+				cancel <- struct{}{}
 			},
 		)
 	}
 	{
+		// Initial configuration loading.
 		cancel := make(chan struct{})
 		g.Add(
 			func() error {
@@ -482,7 +505,7 @@ func main() {
 				}
 
 				if err := reloadConfig(cfg.configFile, logger, reloaders...); err != nil {
-					return fmt.Errorf("Error loading config %s", err)
+					return fmt.Errorf("error loading config from %q: %s", cfg.configFile, err)
 				}
 
 				reloadReady.Close()
@@ -498,6 +521,24 @@ func main() {
 		)
 	}
 	{
+		// Rule manager.
+		// TODO(krasi) refactor ruleManager.Run() to be blocking to avoid using an extra blocking channel.
+		cancel := make(chan struct{})
+		g.Add(
+			func() error {
+				<-reloadReady.C
+				ruleManager.Run()
+				<-cancel
+				return nil
+			},
+			func(err error) {
+				ruleManager.Stop()
+				close(cancel)
+			},
+		)
+	}
+	{
+		// TSDB.
 		cancel := make(chan struct{})
 		g.Add(
 			func() error {
@@ -509,7 +550,7 @@ func main() {
 					&cfg.tsdb,
 				)
 				if err != nil {
-					return fmt.Errorf("Opening storage failed %s", err)
+					return fmt.Errorf("opening storage failed: %s", err)
 				}
 				level.Info(logger).Log("msg", "TSDB started")
 
@@ -528,37 +569,22 @@ func main() {
 		)
 	}
 	{
+		// Web handler.
 		g.Add(
 			func() error {
 				if err := webHandler.Run(ctxWeb); err != nil {
-					return fmt.Errorf("Error starting web server: %s", err)
+					return fmt.Errorf("error starting web server: %s", err)
 				}
 				return nil
 			},
 			func(err error) {
-				// Keep this interrupt before the ruleManager.Stop().
-				// Shutting down the query engine before the rule manager will cause pending queries
-				// to be canceled and ensures a quick shutdown of the rule manager.
 				cancelWeb()
 			},
 		)
 	}
 	{
-		// TODO(krasi) refactor ruleManager.Run() to be blocking to avoid using an extra blocking channel.
-		cancel := make(chan struct{})
-		g.Add(
-			func() error {
-				ruleManager.Run()
-				<-cancel
-				return nil
-			},
-			func(err error) {
-				ruleManager.Stop()
-				close(cancel)
-			},
-		)
-	}
-	{
+		// Notifier.
+
 		// Calling notifier.Stop() before ruleManager.Stop() will cause a panic if the ruleManager isn't running,
 		// so keep this interrupt after the ruleManager.Stop().
 		g.Add(
@@ -580,6 +606,7 @@ func main() {
 	}
 	if err := g.Run(); err != nil {
 		level.Error(logger).Log("err", err)
+		os.Exit(1)
 	}
 	level.Info(logger).Log("msg", "See you next time!")
 }
@@ -598,7 +625,7 @@ func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config
 
 	conf, err := config.LoadFile(filename)
 	if err != nil {
-		return fmt.Errorf("couldn't load configuration (--config.file=%s): %v", filename, err)
+		return fmt.Errorf("couldn't load configuration (--config.file=%q): %v", filename, err)
 	}
 
 	failed := false
@@ -609,8 +636,9 @@ func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config
 		}
 	}
 	if failed {
-		return fmt.Errorf("one or more errors occurred while applying the new configuration (--config.file=%s)", filename)
+		return fmt.Errorf("one or more errors occurred while applying the new configuration (--config.file=%q)", filename)
 	}
+	level.Info(logger).Log("msg", "Completed loading of configuration file", "filename", filename)
 	return nil
 }
 
@@ -655,7 +683,7 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 // sendAlerts implements the rules.NotifyFunc for a Notifier.
 // It filters any non-firing alerts from the input.
 func sendAlerts(n *notifier.Manager, externalURL string) rules.NotifyFunc {
-	return func(ctx context.Context, expr string, alerts ...*rules.Alert) error {
+	return func(ctx context.Context, expr string, alerts ...*rules.Alert) {
 		var res []*notifier.Alert
 
 		for _, alert := range alerts {
@@ -678,6 +706,5 @@ func sendAlerts(n *notifier.Manager, externalURL string) rules.NotifyFunc {
 		if len(alerts) > 0 {
 			n.Send(res...)
 		}
-		return nil
 	}
 }

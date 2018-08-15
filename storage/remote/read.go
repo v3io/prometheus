@@ -43,8 +43,8 @@ type querier struct {
 
 // Select implements storage.Querier and uses the given matchers to read series
 // sets from the Client.
-func (q *querier) Select(_ *storage.SelectParams, matchers ...*labels.Matcher) (storage.SeriesSet, error) {
-	query, err := ToQuery(q.mint, q.maxt, matchers)
+func (q *querier) Select(p *storage.SelectParams, matchers ...*labels.Matcher) (storage.SeriesSet, error) {
+	query, err := ToQuery(q.mint, q.maxt, matchers, p)
 	if err != nil {
 		return nil, err
 	}
@@ -68,9 +68,9 @@ func (q *querier) Close() error {
 	return nil
 }
 
-// ExternablLabelsHandler returns a storage.Queryable which creates a
+// ExternalLabelsHandler returns a storage.Queryable which creates a
 // externalLabelsQuerier.
-func ExternablLabelsHandler(next storage.Queryable, externalLabels model.LabelSet) storage.Queryable {
+func ExternalLabelsHandler(next storage.Queryable, externalLabels model.LabelSet) storage.Queryable {
 	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 		q, err := next.Querier(ctx, mint, maxt)
 		if err != nil {

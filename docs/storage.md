@@ -45,6 +45,8 @@ The initial two-hour blocks are eventually compacted into longer blocks in the b
 
 Note that a limitation of the local storage is that it is not clustered or replicated. Thus, it is not arbitrarily scalable or durable in the face of disk or node outages and should thus be treated as more of an ephemeral sliding window of recent data. However, if your durability requirements are not strict, you may still succeed in storing up to years of data in the local storage.
 
+For further details on file format, see [TSDB format](https://github.com/prometheus/tsdb/blob/master/docs/format/README.md).
+
 ## Operational aspects
 
 Prometheus has several flags that allow configuring the local storage. The most important ones are:
@@ -64,7 +66,7 @@ If your local storage becomes corrupted for whatever reason, your best bet is to
 
 ## Remote storage integrations
 
-As outlined above, Prometheus's local storage is limited in its scalability and durability. Instead of trying to solve long-term storage in Prometheus itself, Prometheus has a set of interfaces that allow integrating with remote long-term storage systems.
+Prometheus's local storage is limited by single nodes in its scalability and durability. Instead of trying to solve clustered storage in Prometheus itself, Prometheus has a set of interfaces that allow integrating with remote storage systems.
 
 ### Overview
 
@@ -75,7 +77,7 @@ Prometheus integrates with remote storage systems in two ways:
 
 ![Remote read and write architecture](images/remote_integrations.png)
 
-The read and write protocols both use a snappy-compressed protocol buffer encoding over HTTP. The protocols are not considered as stable APIs yet and may change to use gRPC over HTTP/2 in the future, when all hops between Prometheus and the long-term storage can safely be assumed to support HTTP/2.
+The read and write protocols both use a snappy-compressed protocol buffer encoding over HTTP. The protocols are not considered as stable APIs yet and may change to use gRPC over HTTP/2 in the future, when all hops between Prometheus and the remote storage can safely be assumed to support HTTP/2.
 
 For details on configuring remote storage integrations in Prometheus, see the [remote write](configuration/configuration.md#remote_write) and [remote read](configuration/configuration.md#remote_read) sections of the Prometheus configuration documentation.
 
