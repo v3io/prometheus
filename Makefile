@@ -34,4 +34,9 @@ assets:
 	@go-bindata $(bindata_flags) -pkg ui -o web/ui/bindata.go -ignore '(.*\.map|bootstrap\.js|bootstrap-theme\.css|bootstrap\.css)'  web/ui/templates/... web/ui/static/...
 	@$(GO) fmt ./web/ui
 
-.PHONY: all style check_license format updatetsdb v3ioconfig v3iotsdb build test vet assets tarball docker promu staticcheck $(FIRST_GOPATH)/bin/staticcheck govendor $(FIRST_GOPATH)/bin/govendor
+# Redirect to common, so Travis CI will do what is suppose to do
+style: common-style
+unused: common-unused
+check_license: common-check_license
+staticcheck: common-staticcheck
+test: common-test
