@@ -14,15 +14,22 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
+	"math"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/alecthomas/kingpin.v2"
 	"gopkg.in/yaml.v2"
 
+	"github.com/prometheus/client_golang/api"
+	"github.com/prometheus/client_golang/api/prometheus/v1"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
@@ -57,6 +64,36 @@ func main() {
 	updateRulesCmd := updateCmd.Command("rules", "Update rules from the 1.x to 2.x format.")
 	ruleFilesUp := updateRulesCmd.Arg("rule-files", "The rule files to update.").Required().ExistingFiles()
 
+	queryCmd := app.Command("query", "Run query against a Prometheus server.")
+	queryInstantCmd := queryCmd.Command("instant", "Run instant query.")
+	queryServer := queryInstantCmd.Arg("server", "Prometheus server to query.").Required().String()
+	queryExpr := queryInstantCmd.Arg("expr", "PromQL query expression.").Required().String()
+
+	queryRangeCmd := queryCmd.Command("range", "Run range query.")
+	queryRangeServer := queryRangeCmd.Arg("server", "Prometheus server to query.").Required().String()
+	queryRangeExpr := queryRangeCmd.Arg("expr", "PromQL query expression.").Required().String()
+	queryRangeBegin := queryRangeCmd.Flag("start", "Query range start time (RFC3339 or Unix timestamp).").String()
+	queryRangeEnd := queryRangeCmd.Flag("end", "Query range end time (RFC3339 or Unix timestamp).").String()
+	queryRangeStep := queryRangeCmd.Flag("step", "Query step size (duration).").Duration()
+
+	querySeriesCmd := queryCmd.Command("series", "Run series query.")
+	querySeriesServer := querySeriesCmd.Arg("server", "Prometheus server to query.").Required().URL()
+	querySeriesMatch := querySeriesCmd.Flag("match", "Series selector. Can be specified multiple times.").Required().Strings()
+	querySeriesBegin := querySeriesCmd.Flag("start", "Start time (RFC3339 or Unix timestamp).").String()
+	querySeriesEnd := querySeriesCmd.Flag("end", "End time (RFC3339 or Unix timestamp).").String()
+
+	debugCmd := app.Command("debug", "Fetch debug information.")
+	debugPprofCmd := debugCmd.Command("pprof", "Fetch profiling debug information.")
+	debugPprofServer := debugPprofCmd.Arg("server", "Prometheus server to get pprof files from.").Required().String()
+	debugMetricsCmd := debugCmd.Command("metrics", "Fetch metrics debug information.")
+	debugMetricsServer := debugMetricsCmd.Arg("server", "Prometheus server to get metrics from.").Required().String()
+	debugAllCmd := debugCmd.Command("all", "Fetch all debug information.")
+	debugAllServer := debugAllCmd.Arg("server", "Prometheus server to get all debug information from.").Required().String()
+
+	queryLabelsCmd := queryCmd.Command("labels", "Run labels query.")
+	queryLabelsServer := queryLabelsCmd.Arg("server", "Prometheus server to query.").Required().URL()
+	queryLabelsName := queryLabelsCmd.Arg("name", "Label name to provide label values for.").Required().String()
+
 	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
 	case checkConfigCmd.FullCommand():
 		os.Exit(CheckConfig(*configFiles...))
@@ -70,6 +107,26 @@ func main() {
 	case updateRulesCmd.FullCommand():
 		os.Exit(UpdateRules(*ruleFilesUp...))
 
+	case queryInstantCmd.FullCommand():
+		os.Exit(QueryInstant(*queryServer, *queryExpr))
+
+	case queryRangeCmd.FullCommand():
+		os.Exit(QueryRange(*queryRangeServer, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd, *queryRangeStep))
+
+	case querySeriesCmd.FullCommand():
+		os.Exit(QuerySeries(*querySeriesServer, *querySeriesMatch, *querySeriesBegin, *querySeriesEnd))
+
+	case debugPprofCmd.FullCommand():
+		os.Exit(debugPprof(*debugPprofServer))
+
+	case debugMetricsCmd.FullCommand():
+		os.Exit(debugMetrics(*debugMetricsServer))
+
+	case debugAllCmd.FullCommand():
+		os.Exit(debugAll(*debugAllServer))
+
+	case queryLabelsCmd.FullCommand():
+		os.Exit(QueryLabels(*queryLabelsServer, *queryLabelsName))
 	}
 
 }
@@ -325,4 +382,247 @@ func CheckMetrics() int {
 	}
 
 	return 0
+}
+
+// QueryInstant performs an instant query against a Prometheus server.
+func QueryInstant(url string, query string) int {
+	config := api.Config{
+		Address: url,
+	}
+
+	// Create new client.
+	c, err := api.NewClient(config)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error creating API client:", err)
+		return 1
+	}
+
+	// Run query against client.
+	api := v1.NewAPI(c)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	val, err := api.Query(ctx, query, time.Now())
+	cancel()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "query error:", err)
+		return 1
+	}
+
+	fmt.Println(val.String())
+
+	return 0
+}
+
+// QueryRange performs a range query against a Prometheus server.
+func QueryRange(url, query, start, end string, step time.Duration) int {
+	config := api.Config{
+		Address: url,
+	}
+
+	// Create new client.
+	c, err := api.NewClient(config)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error creating API client:", err)
+		return 1
+	}
+
+	var stime, etime time.Time
+
+	if end == "" {
+		etime = time.Now()
+	} else {
+		etime, err = parseTime(end)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error parsing end time:", err)
+			return 1
+		}
+	}
+
+	if start == "" {
+		stime = etime.Add(-5 * time.Minute)
+	} else {
+		stime, err = parseTime(start)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error parsing start time:", err)
+		}
+	}
+
+	if !stime.Before(etime) {
+		fmt.Fprintln(os.Stderr, "start time is not before end time")
+	}
+
+	if step == 0 {
+		resolution := math.Max(math.Floor(etime.Sub(stime).Seconds()/250), 1)
+		// Convert seconds to nanoseconds such that time.Duration parses correctly.
+		step = time.Duration(resolution) * time.Second
+	}
+
+	// Run query against client.
+	api := v1.NewAPI(c)
+	r := v1.Range{Start: stime, End: etime, Step: step}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	val, err := api.QueryRange(ctx, query, r)
+	cancel()
+
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "query error:", err)
+		return 1
+	}
+
+	fmt.Println(val.String())
+	return 0
+}
+
+// QuerySeries queries for a series against a Prometheus server.
+func QuerySeries(url *url.URL, matchers []string, start string, end string) int {
+	config := api.Config{
+		Address: url.String(),
+	}
+
+	// Create new client.
+	c, err := api.NewClient(config)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error creating API client:", err)
+		return 1
+	}
+
+	// TODO: clean up timestamps
+	var (
+		minTime = time.Now().Add(-9999 * time.Hour)
+		maxTime = time.Now().Add(9999 * time.Hour)
+	)
+
+	var stime, etime time.Time
+
+	if start == "" {
+		stime = minTime
+	} else {
+		stime, err = parseTime(start)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error parsing start time:", err)
+		}
+	}
+
+	if end == "" {
+		etime = maxTime
+	} else {
+		etime, err = parseTime(end)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error parsing end time:", err)
+		}
+	}
+
+	// Run query against client.
+	api := v1.NewAPI(c)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	val, err := api.Series(ctx, matchers, stime, etime)
+	cancel()
+
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "query error:", err)
+		return 1
+	}
+
+	for _, v := range val {
+		fmt.Println(v)
+	}
+	return 0
+}
+
+// QueryLabels queries for label values against a Prometheus server.
+func QueryLabels(url *url.URL, name string) int {
+	config := api.Config{
+		Address: url.String(),
+	}
+
+	// Create new client.
+	c, err := api.NewClient(config)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error creating API client:", err)
+		return 1
+	}
+
+	// Run query against client.
+	api := v1.NewAPI(c)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	val, err := api.LabelValues(ctx, name)
+	cancel()
+
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "query error:", err)
+		return 1
+	}
+
+	for _, v := range val {
+		fmt.Println(v)
+	}
+	return 0
+}
+
+func parseTime(s string) (time.Time, error) {
+	if t, err := strconv.ParseFloat(s, 64); err == nil {
+		s, ns := math.Modf(t)
+		return time.Unix(int64(s), int64(ns*float64(time.Second))), nil
+	}
+	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+		return t, nil
+	}
+	return time.Time{}, fmt.Errorf("cannot parse %q to a valid timestamp", s)
+}
+
+func debugPprof(url string) int {
+	w, err := newDebugWriter(debugWriterConfig{
+		serverURL:   url,
+		tarballName: "debug.tar.gz",
+		pathToFileName: map[string]string{
+			"/debug/pprof/block":        "block.pb",
+			"/debug/pprof/goroutine":    "goroutine.pb",
+			"/debug/pprof/heap":         "heap.pb",
+			"/debug/pprof/mutex":        "mutex.pb",
+			"/debug/pprof/threadcreate": "threadcreate.pb",
+		},
+		postProcess: pprofPostProcess,
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error creating debug writer:", err)
+		return 1
+	}
+	return w.Write()
+}
+
+func debugMetrics(url string) int {
+	w, err := newDebugWriter(debugWriterConfig{
+		serverURL:   url,
+		tarballName: "debug.tar.gz",
+		pathToFileName: map[string]string{
+			"/metrics": "metrics.txt",
+		},
+		postProcess: metricsPostProcess,
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error creating debug writer:", err)
+		return 1
+	}
+	return w.Write()
+}
+
+func debugAll(url string) int {
+	w, err := newDebugWriter(debugWriterConfig{
+		serverURL:   url,
+		tarballName: "debug.tar.gz",
+		pathToFileName: map[string]string{
+			"/debug/pprof/block":        "block.pb",
+			"/debug/pprof/goroutine":    "goroutine.pb",
+			"/debug/pprof/heap":         "heap.pb",
+			"/debug/pprof/mutex":        "mutex.pb",
+			"/debug/pprof/threadcreate": "threadcreate.pb",
+			"/metrics":                  "metrics.txt",
+		},
+		postProcess: allPostProcess,
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error creating debug writer:", err)
+		return 1
+	}
+	return w.Write()
 }
