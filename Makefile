@@ -40,7 +40,7 @@ STATICCHECK_IGNORE = \
   github.com/prometheus/prometheus/promql/engine.go:SA6002 \
   github.com/prometheus/prometheus/web/web.go:SA1019
 
-all: format staticcheck unused updatetsdb build test
+all: format staticcheck unused build test
 
 style:
 	@echo ">> checking code style"
@@ -55,9 +55,9 @@ test-short:
 	@echo ">> running short tests"
 	@$(GO) test -short $(shell $(GO) list ./... | grep -v /vendor/ | grep -v examples)
 
-test: v3iotsdb
+test:
 	@echo ">> running all tests"
-	@V3IO_TSDBCFG_PATH=/tmp/v3io-tsdb.yaml $(GO) test -race $(shell $(GO) list ./... | grep -v /vendor/ | grep -v examples)
+	@$(GO) test -tags test -race $(shell $(GO) list ./... | grep -v /vendor/ | grep -v examples)
 
 format:
 	@echo ">> formatting code"
@@ -103,14 +103,4 @@ $(FIRST_GOPATH)/bin/staticcheck:
 $(FIRST_GOPATH)/bin/govendor:
 	@GOOS= GOARCH= $(GO) get -u github.com/kardianos/govendor
 
-v3ioconfig:
-	@echo ">> creating v3io configuration"
-	@echo "disabled: true" > /tmp/v3io-tsdb.yaml
-
-updatetsdb:
-	@echo ">> fetching V3IO TSDB"
-	@$(GO) get -u github.com/v3io/v3io-tsdb/...
-
-v3iotsdb: updatetsdb v3ioconfig
-
-.PHONY: all style check_license format updatetsdb v3ioconfig v3iotsdb build test vet assets tarball docker promu staticcheck $(FIRST_GOPATH)/bin/staticcheck govendor $(FIRST_GOPATH)/bin/govendor
+.PHONY: all style check_license format build test vet assets tarball docker promu staticcheck $(FIRST_GOPATH)/bin/staticcheck govendor $(FIRST_GOPATH)/bin/govendor

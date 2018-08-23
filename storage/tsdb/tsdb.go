@@ -11,6 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Build this module only if tests are being run
+// +build test
+
 package tsdb
 
 import (
@@ -19,7 +22,6 @@ import (
 	"time"
 	"unsafe"
 
-	"fmt"
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -28,23 +30,16 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/tsdb"
 	tsdbLabels "github.com/prometheus/tsdb/labels"
-	"github.com/v3io/v3io-tsdb/pkg/config"
-	"github.com/v3io/v3io-tsdb/promtsdb"
-	"os"
 )
 
 // ErrNotReady is returned if the underlying storage is not ready yet.
 var ErrNotReady = errors.New("TSDB not ready")
-
-// V3IO TSDB Adapter
-var v3ioadp *promtsdb.V3ioPromAdapter
 
 // ReadyStorage implements the Storage interface while allowing to set the actual
 // storage at a later point in time.
 type ReadyStorage struct {
 	mtx sync.RWMutex
 	a   *adapter
-	v3a storage.Storage //NEW
 }
 
 // Set the storage.
@@ -53,8 +48,6 @@ func (s *ReadyStorage) Set(db *tsdb.DB, startTimeMargin int64) {
 	defer s.mtx.Unlock()
 
 	s.a = &adapter{db: db, startTimeMargin: startTimeMargin}
-
-	s.v3a = v3ioadp
 }
 
 // Get the storage.
@@ -82,13 +75,6 @@ func (s *ReadyStorage) StartTime() (int64, error) {
 
 // Querier implements the Storage interface.
 func (s *ReadyStorage) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-
-	// Initialize V3IO Querier
-	fmt.Printf("Q")
-	if s.v3a != nil {
-		return s.v3a.Querier(ctx, mint, maxt) //NEW
-	}
-
 	if x := s.get(); x != nil {
 		return x.Querier(ctx, mint, maxt)
 	}
@@ -97,13 +83,6 @@ func (s *ReadyStorage) Querier(ctx context.Context, mint, maxt int64) (storage.Q
 
 // Appender implements the Storage interface.
 func (s *ReadyStorage) Appender() (storage.Appender, error) {
-
-	fmt.Printf(".")
-	// Initialize V3IO Appender
-	if s.v3a != nil {
-		return s.v3a.Appender() //NEW
-	}
-
 	if x := s.get(); x != nil {
 		return x.Appender()
 	}
@@ -150,26 +129,6 @@ type Options struct {
 
 // Open returns a new storage backed by a TSDB database that is configured for Prometheus.
 func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*tsdb.DB, error) {
-
-	// Initialize V3IO Adapter
-	cfgpath := os.Getenv("V3IO_FILE_PATH")
-	if cfgpath == "" {
-		cfgpath = "/etc/v3io/v3io-tsdb.yaml"
-	}
-	cfg, err := config.LoadConfig(cfgpath)
-	if err != nil {
-		return nil, err
-	}
-
-	if !cfg.Disabled {
-		v3ioadp, err = promtsdb.NewV3ioProm(cfg, nil, nil) //NEW
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	// TODO: remove the tsdb.DB init
-
 	if opts.MinBlockDuration > opts.MaxBlockDuration {
 		opts.MaxBlockDuration = opts.MinBlockDuration
 	}
