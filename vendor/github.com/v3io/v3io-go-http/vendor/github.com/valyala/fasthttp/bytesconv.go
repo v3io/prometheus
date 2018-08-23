@@ -164,7 +164,7 @@ func ParseUint(buf []byte) (int, error) {
 var (
 	errEmptyInt               = errors.New("empty integer")
 	errUnexpectedFirstChar    = errors.New("unexpected first char found. Expecting 0-9")
-	errUnexpectedTrailingChar = errors.New("unexpected traling char found. Expecting 0-9")
+	errUnexpectedTrailingChar = errors.New("unexpected trailing char found. Expecting 0-9")
 	errTooLongInt             = errors.New("too long int")
 )
 
@@ -322,15 +322,15 @@ func hexCharUpper(c byte) byte {
 }
 
 var hex2intTable = func() []byte {
-	b := make([]byte, 255)
-	for i := byte(0); i < 255; i++ {
+	b := make([]byte, 256)
+	for i := 0; i < 256; i++ {
 		c := byte(16)
 		if i >= '0' && i <= '9' {
-			c = i - '0'
+			c = byte(i) - '0'
 		} else if i >= 'a' && i <= 'f' {
-			c = i - 'a' + 10
+			c = byte(i) - 'a' + 10
 		} else if i >= 'A' && i <= 'F' {
-			c = i - 'A' + 10
+			c = byte(i) - 'A' + 10
 		}
 		b[i] = c
 	}
@@ -431,7 +431,7 @@ func appendQuotedPath(dst, src []byte) []byte {
 // This function has no performance benefits comparing to string(b) == s.
 // It is left here for backwards compatibility only.
 //
-// This function is deperecated and may be deleted soon.
+// This function is deprecated and may be deleted soon.
 func EqualBytesStr(b []byte, s string) bool {
 	return string(b) == s
 }
