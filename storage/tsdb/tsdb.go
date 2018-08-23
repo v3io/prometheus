@@ -15,22 +15,22 @@ package tsdb
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"reflect"
 	"sync"
 	"time"
-	"encoding/json"
-	"reflect"
-	"os"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/tsdb"
-	"github.com/prometheus/common/model"
 
 	"github.com/go-kit/kit/log"
-	"github.com/pkg/errors"
-	"github.com/v3io/v3io-tsdb/promtsdb"
-	"github.com/v3io/v3io-tsdb/pkg/config"
 	"github.com/go-kit/kit/log/level"
+	"github.com/pkg/errors"
+	"github.com/v3io/v3io-tsdb/pkg/config"
+	"github.com/v3io/v3io-tsdb/promtsdb"
 )
 
 // ErrNotReady is returned if the underlying storage is not ready yet.
