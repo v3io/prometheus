@@ -16,7 +16,6 @@ package tsdb
 import (
 	"context"
 	"sync"
-	"fmt"
 	"time"
 	"encoding/json"
 	"reflect"
@@ -84,7 +83,7 @@ func (s *ReadyStorage) StartTime() (int64, error) {
 
 // Querier implements the Storage interface.
 func (s *ReadyStorage) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-	fmt.Printf("Q")
+	s.logger.Log("msg", "Querier requested", "mint", mint, "maxt", maxt)
 
 	if !reflect.ValueOf(s.v3ioPromAdapter).IsNil() {
 		return s.v3ioPromAdapter.Querier(ctx, mint, maxt) //NEW
@@ -95,7 +94,7 @@ func (s *ReadyStorage) Querier(ctx context.Context, mint, maxt int64) (storage.Q
 
 // Appender implements the Storage interface.
 func (s *ReadyStorage) Appender() (storage.Appender, error) {
-	fmt.Printf(".")
+	s.logger.Log("msg", "Appended requested")
 
 	if !reflect.ValueOf(s.v3ioPromAdapter).IsNil() {
 		return s.v3ioPromAdapter.Appender() //NEW
