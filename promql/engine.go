@@ -699,8 +699,13 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 	switch e := expr.(type) {
 	case *AggregateExpr:
-		Vector := ev.evalVector(e.Expr)
-		return ev.aggregation(e.Op, e.Grouping, e.Without, e.Param, Vector)
+
+		// @@@v3io
+		// Removed aggregations performed by Prometheus since the storage takes care
+		// of that (sum, avg, count). This was harmless for some aggregations (e.g.
+		// running a sum on a returned sum), but bad for others (counting a count result,
+		// which always returned 1). Simply return the vector as returned by storage (v3io)
+		return ev.evalVector(e.Expr)
 
 	case *BinaryExpr:
 		lhs := ev.evalOneOf(e.LHS, ValueTypeScalar, ValueTypeVector)

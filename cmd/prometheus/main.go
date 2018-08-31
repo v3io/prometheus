@@ -681,3 +681,18 @@ func sendAlerts(n *notifier.Manager, externalURL string) rules.NotifyFunc {
 		return nil
 	}
 }
+
+// Uname for any platform other than linux.
+func Uname() string {
+	return "(" + runtime.GOOS + ")"
+}
+
+// FdLimits returns the soft and hard limits for file descriptors
+func FdLimits() string {
+	flimit := syscall.Rlimit{}
+	err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &flimit)
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf("(soft=%d, hard=%d)", flimit.Cur, flimit.Max)
+}
