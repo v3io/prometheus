@@ -222,10 +222,10 @@ func NewAggrSeries(set *V3ioSeriesSet, aggr aggregate.AggrType) *V3ioSeries {
 		// this means we need to copy all the stateful things we need into the iterator (e.g. aggrSet) so that
 		// when it's evaluated, it'll hold the proper pointer
 		newSeries.iter = &aggrSeriesIterator{
-			set: set,
-			aggrSet: set.aggrSet,
+			set:      set,
+			aggrSet:  set.aggrSet,
 			aggrType: aggr,
-			index: -1,
+			index:    -1,
 		}
 	}
 
@@ -247,7 +247,7 @@ func (s *aggrSeriesIterator) Seek(t int64) bool {
 		return true
 	}
 
-	if t > s.set.baseTime + int64(s.aggrSet.GetMaxCell()) * s.set.interval {
+	if t > s.set.baseTime+int64(s.aggrSet.GetMaxCell())*s.set.interval {
 		return false
 	}
 

@@ -53,12 +53,12 @@ func NewAggregateSeries(functions, col string, buckets int, interval, rollupTime
 	}
 
 	newAggregateSeries := AggregateSeries{
-		aggrMask: aggrMask,
-		functions: aggrList,
-		colName: col,
-		buckets: buckets,
-		rollupTime: rollupTime,
-		interval: interval,
+		aggrMask:       aggrMask,
+		functions:      aggrList,
+		colName:        col,
+		buckets:        buckets,
+		rollupTime:     rollupTime,
+		interval:       interval,
 		overlapWindows: windows,
 	}
 
@@ -322,7 +322,7 @@ func (as *AggregateSet) GetCellValue(aggr AggrType, cell int) (float64, bool) {
 // get the time per aggregate cell
 func (as *AggregateSet) GetCellTime(base int64, index int) int64 {
 	if as.overlapWin == nil {
-		return base + int64(index) * as.interval
+		return base + int64(index)*as.interval
 	}
 
 	if index >= len(as.overlapWin) {

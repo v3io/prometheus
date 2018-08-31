@@ -148,7 +148,7 @@ func (s *V3ioSeriesSet) Next() bool {
 			// the number of cells is equal to divisor of (maxt-mint) and interval. if there's a
 			// remainder, add a cell
 			numCells := (s.maxt - s.mint) / s.interval
-			if (s.maxt % s.mint) != 0 {
+			if (s.maxt%s.mint) != 0 || numCells == 0 {
 				numCells++
 			}
 
