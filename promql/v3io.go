@@ -11,8 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Build this module only if tests are being run
-// +build test
+// Don't build this module when running tests
+// +build !test
 
 package promql
 
@@ -702,8 +702,13 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 	switch e := expr.(type) {
 	case *AggregateExpr:
-		Vector := ev.evalVector(e.Expr)
-		return ev.aggregation(e.Op, e.Grouping, e.Without, e.Param, Vector)
+
+		// @@@v3io
+		// Removed aggregations performed by Prometheus since the storage takes care
+		// of that (sum, avg, count). This was harmless for some aggregations (e.g.
+		// running a sum on a returned sum), but bad for others (counting a count result,
+		// which always returned 1). Simply return the vector as returned by storage (v3io)
+		return ev.evalVector(e.Expr)
 
 	case *BinaryExpr:
 		lhs := ev.evalOneOf(e.LHS, ValueTypeScalar, ValueTypeVector)

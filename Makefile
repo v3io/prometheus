@@ -38,6 +38,7 @@ STATICCHECK_IGNORE = \
   github.com/prometheus/prometheus/pkg/textparse/lex.l.go:SA4006 \
   github.com/prometheus/prometheus/pkg/pool/pool.go:SA6002 \
   github.com/prometheus/prometheus/promql/engine.go:SA6002 \
+  github.com/prometheus/prometheus/promql/v3io.go:SA6002 \
   github.com/prometheus/prometheus/web/web.go:SA1019
 
 all: format staticcheck unused build test
