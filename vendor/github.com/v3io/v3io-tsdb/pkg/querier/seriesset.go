@@ -116,7 +116,7 @@ func (s *V3ioSeriesSet) Next() bool {
 			mint := s.partition.CyclicMinTime(s.mint, maxtUpdate)
 
 			start := s.partition.Time2Bucket(mint)
-			end := s.partition.Time2Bucket(s.maxt + s.interval)
+			end := s.partition.Time2Bucket(s.maxt+s.interval) + 1
 
 			// len of the returned array, cropped at the end in case of cyclic overlap
 			length := int((maxtUpdate-mint)/s.interval) + 2
@@ -146,9 +146,9 @@ func (s *V3ioSeriesSet) Next() bool {
 			s.currSeries = NewSeries(s)
 
 			// the number of cells is equal to divisor of (maxt-mint) and interval. if there's a
-			// remainder, add a cell
+			// remainder or if there are no cells (e.g. diff is smaller than interval), add a cell
 			numCells := (s.maxt - s.mint) / s.interval
-			if (s.maxt%s.mint) != 0 || numCells == 0 {
+			if ((s.maxt-s.mint)%s.interval) != 0 || numCells == 0 {
 				numCells++
 			}
 
