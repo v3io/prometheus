@@ -11,8 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Build this module only if tests are being run
-// +build test
+// Don't build this module when running tests
+// +build !test
 
 package promql
 
