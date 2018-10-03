@@ -173,7 +173,7 @@ func (s *ReadyStorage) watchConfigForChanges(configPath string) error {
 }
 
 func (s *ReadyStorage) createV3ioPromAdapater(configPath string) (*promtsdb.V3ioPromAdapter, error) {
-	loadedConfig, err := config.LoadConfig(configPath)
+	loadedConfig, err := config.GetOrLoadFromFile(configPath)
 	if err != nil {
 		return nil, err
 	}
