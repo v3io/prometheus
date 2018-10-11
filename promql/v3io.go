@@ -1260,13 +1260,6 @@ type groupedAggregation struct {
 // aggregation evaluates an aggregation operation on a Vector.
 func (ev *evaluator) aggregation(op itemType, grouping []string, without bool, param Expr, vec Vector) Vector {
 
-	// @@@v3io
-	// Removed count aggregations performed by Prometheus since the storage takes care
-	// of that. If we re-count them we will get improper values
-	if op == itemCount || op == itemCountValues {
-		return vec
-	}
-
 	result := map[uint64]*groupedAggregation{}
 	var k int64
 	if op == itemTopK || op == itemBottomK {
