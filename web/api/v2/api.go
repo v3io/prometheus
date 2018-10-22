@@ -19,7 +19,6 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -39,38 +38,22 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	pb "github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/scrape"
-	"github.com/prometheus/prometheus/storage"
 )
 
 // API encapsulates all API services.
 type API struct {
-	enableAdmin   bool
-	now           func() time.Time
-	db            func() *tsdb.DB
-	q             func(ctx context.Context, mint, maxt int64) (storage.Querier, error)
-	targets       func() []*scrape.Target
-	alertmanagers func() []*url.URL
+	enableAdmin bool
+	db          func() *tsdb.DB
 }
 
 // New returns a new API object.
 func New(
-	now func() time.Time,
 	db func() *tsdb.DB,
-	qe *promql.Engine,
-	q func(ctx context.Context, mint, maxt int64) (storage.Querier, error),
-	targets func() []*scrape.Target,
-	alertmanagers func() []*url.URL,
 	enableAdmin bool,
 ) *API {
 	return &API{
-		now:           now,
-		db:            db,
-		q:             q,
-		targets:       targets,
-		alertmanagers: alertmanagers,
-		enableAdmin:   enableAdmin,
+		db:          db,
+		enableAdmin: enableAdmin,
 	}
 }
 
@@ -135,7 +118,7 @@ func labelsToProto(lset labels.Labels) pb.Labels {
 }
 
 // AdminDisabled implements the administration interface that informs
-// that the API endpoints are disbaled.
+// that the API endpoints are disabled.
 type AdminDisabled struct {
 }
 
@@ -167,7 +150,7 @@ func NewAdmin(db func() *tsdb.DB) *Admin {
 }
 
 // TSDBSnapshot implements pb.AdminServer.
-func (s *Admin) TSDBSnapshot(_ old_ctx.Context, _ *pb.TSDBSnapshotRequest) (*pb.TSDBSnapshotResponse, error) {
+func (s *Admin) TSDBSnapshot(_ old_ctx.Context, req *pb.TSDBSnapshotRequest) (*pb.TSDBSnapshotResponse, error) {
 	db := s.db()
 	if db == nil {
 		return nil, status.Errorf(codes.Unavailable, "TSDB not ready")
@@ -182,7 +165,7 @@ func (s *Admin) TSDBSnapshot(_ old_ctx.Context, _ *pb.TSDBSnapshotRequest) (*pb.
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return nil, status.Errorf(codes.Internal, "created snapshot directory: %s", err)
 	}
-	if err := db.Snapshot(dir); err != nil {
+	if err := db.Snapshot(dir, !req.SkipHead); err != nil {
 		return nil, status.Errorf(codes.Internal, "create snapshot: %s", err)
 	}
 	return &pb.TSDBSnapshotResponse{Name: name}, nil
