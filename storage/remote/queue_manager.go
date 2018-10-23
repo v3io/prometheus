@@ -14,8 +14,10 @@
 package remote
 
 import (
+	"context"
 	"math"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -95,12 +97,12 @@ var (
 		},
 		[]string{queue},
 	)
-	queueCapacity = prometheus.NewGaugeVec(
+	shardCapacity = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
-			Name:      "queue_capacity",
-			Help:      "The capacity of the queue of samples to be sent to the remote storage.",
+			Name:      "shard_capacity",
+			Help:      "The capacity of each shard of the queue used for parallel sending to the remote storage.",
 		},
 		[]string{queue},
 	)
@@ -121,7 +123,7 @@ func init() {
 	prometheus.MustRegister(droppedSamplesTotal)
 	prometheus.MustRegister(sentBatchDuration)
 	prometheus.MustRegister(queueLength)
-	prometheus.MustRegister(queueCapacity)
+	prometheus.MustRegister(shardCapacity)
 	prometheus.MustRegister(numShards)
 }
 
@@ -129,7 +131,7 @@ func init() {
 // external timeseries database.
 type StorageClient interface {
 	// Store stores the given samples in the remote storage.
-	Store(*prompb.WriteRequest) error
+	Store(context.Context, *prompb.WriteRequest) error
 	// Name identifies the remote storage implementation.
 	Name() string
 }
@@ -139,6 +141,7 @@ type StorageClient interface {
 type QueueManager struct {
 	logger log.Logger
 
+	flushDeadline  time.Duration
 	cfg            config.QueueConfig
 	externalLabels model.LabelSet
 	relabelConfigs []*config.RelabelConfig
@@ -158,12 +161,15 @@ type QueueManager struct {
 }
 
 // NewQueueManager builds a new QueueManager.
-func NewQueueManager(logger log.Logger, cfg config.QueueConfig, externalLabels model.LabelSet, relabelConfigs []*config.RelabelConfig, client StorageClient) *QueueManager {
+func NewQueueManager(logger log.Logger, cfg config.QueueConfig, externalLabels model.LabelSet, relabelConfigs []*config.RelabelConfig, client StorageClient, flushDeadline time.Duration) *QueueManager {
 	if logger == nil {
 		logger = log.NewNopLogger()
+	} else {
+		logger = log.With(logger, "queue", client.Name())
 	}
 	t := &QueueManager{
 		logger:         logger,
+		flushDeadline:  flushDeadline,
 		cfg:            cfg,
 		externalLabels: externalLabels,
 		relabelConfigs: relabelConfigs,
@@ -181,7 +187,7 @@ func NewQueueManager(logger log.Logger, cfg config.QueueConfig, externalLabels m
 	}
 	t.shards = t.newShards(t.numShards)
 	numShards.WithLabelValues(t.queueName).Set(float64(t.numShards))
-	queueCapacity.WithLabelValues(t.queueName).Set(float64(t.cfg.Capacity))
+	shardCapacity.WithLabelValues(t.queueName).Set(float64(t.cfg.Capacity))
 
 	// Initialise counter labels to zero.
 	sentBatchDuration.WithLabelValues(t.queueName)
@@ -255,7 +261,7 @@ func (t *QueueManager) Stop() {
 
 	t.shardsMtx.Lock()
 	defer t.shardsMtx.Unlock()
-	t.shards.stop()
+	t.shards.stop(t.flushDeadline)
 
 	level.Info(t.logger).Log("msg", "Remote storage stopped.")
 }
@@ -360,7 +366,7 @@ func (t *QueueManager) reshard(n int) {
 	t.shards = newShards
 	t.shardsMtx.Unlock()
 
-	oldShards.stop()
+	oldShards.stop(t.flushDeadline)
 
 	// We start the newShards after we have stopped (the therefore completely
 	// flushed) the oldShards, to guarantee we only every deliver samples in
@@ -369,10 +375,12 @@ func (t *QueueManager) reshard(n int) {
 }
 
 type shards struct {
-	qm     *QueueManager
-	queues []chan *model.Sample
-	done   chan struct{}
-	wg     sync.WaitGroup
+	qm      *QueueManager
+	queues  []chan *model.Sample
+	done    chan struct{}
+	running int32
+	ctx     context.Context
+	cancel  context.CancelFunc
 }
 
 func (t *QueueManager) newShards(numShards int) *shards {
@@ -380,12 +388,15 @@ func (t *QueueManager) newShards(numShards int) *shards {
 	for i := 0; i < numShards; i++ {
 		queues[i] = make(chan *model.Sample, t.cfg.Capacity)
 	}
+	ctx, cancel := context.WithCancel(context.Background())
 	s := &shards{
-		qm:     t,
-		queues: queues,
-		done:   make(chan struct{}),
+		qm:      t,
+		queues:  queues,
+		done:    make(chan struct{}),
+		running: int32(numShards),
+		ctx:     ctx,
+		cancel:  cancel,
 	}
-	s.wg.Add(numShards)
 	return s
 }
 
@@ -399,11 +410,22 @@ func (s *shards) start() {
 	}
 }
 
-func (s *shards) stop() {
+func (s *shards) stop(deadline time.Duration) {
+	// Attempt a clean shutdown.
 	for _, shard := range s.queues {
 		close(shard)
 	}
-	s.wg.Wait()
+	select {
+	case <-s.done:
+		return
+	case <-time.After(deadline):
+		level.Error(s.qm.logger).Log("msg", "Failed to flush all samples on shutdown")
+	}
+
+	// Force an unclean shutdown.
+	s.cancel()
+	<-s.done
+	return
 }
 
 func (s *shards) enqueue(sample *model.Sample) bool {
@@ -421,7 +443,12 @@ func (s *shards) enqueue(sample *model.Sample) bool {
 }
 
 func (s *shards) runShard(i int) {
-	defer s.wg.Done()
+	defer func() {
+		if atomic.AddInt32(&s.running, -1) == 0 {
+			close(s.done)
+		}
+	}()
+
 	queue := s.queues[i]
 
 	// Send batches of at most MaxSamplesPerSend samples to the remote storage.
@@ -429,10 +456,22 @@ func (s *shards) runShard(i int) {
 	// anyways.
 	pendingSamples := model.Samples{}
 
-	timer := time.NewTimer(s.qm.cfg.BatchSendDeadline)
+	timer := time.NewTimer(time.Duration(s.qm.cfg.BatchSendDeadline))
+	stop := func() {
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+	}
+	defer stop()
 
 	for {
 		select {
+		case <-s.ctx.Done():
+			return
+
 		case sample, ok := <-queue:
 			if !ok {
 				if len(pendingSamples) > 0 {
@@ -446,19 +485,20 @@ func (s *shards) runShard(i int) {
 			queueLength.WithLabelValues(s.qm.queueName).Dec()
 			pendingSamples = append(pendingSamples, sample)
 
-			for len(pendingSamples) >= s.qm.cfg.MaxSamplesPerSend {
+			if len(pendingSamples) >= s.qm.cfg.MaxSamplesPerSend {
 				s.sendSamples(pendingSamples[:s.qm.cfg.MaxSamplesPerSend])
 				pendingSamples = pendingSamples[s.qm.cfg.MaxSamplesPerSend:]
+
+				stop()
+				timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
 			}
-			if !timer.Stop() {
-				<-timer.C
-			}
-			timer.Reset(s.qm.cfg.BatchSendDeadline)
+
 		case <-timer.C:
 			if len(pendingSamples) > 0 {
 				s.sendSamples(pendingSamples)
 				pendingSamples = pendingSamples[:0]
 			}
+			timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
 		}
 	}
 }
@@ -467,7 +507,7 @@ func (s *shards) sendSamples(samples model.Samples) {
 	begin := time.Now()
 	s.sendSamplesWithBackoff(samples)
 
-	// These counters are used to caclulate the dynamic sharding, and as such
+	// These counters are used to calculate the dynamic sharding, and as such
 	// should be maintained irrespective of success or failure.
 	s.qm.samplesOut.incr(int64(len(samples)))
 	s.qm.samplesOutDuration.incr(int64(time.Since(begin)))
@@ -476,10 +516,11 @@ func (s *shards) sendSamples(samples model.Samples) {
 // sendSamples to the remote storage with backoff for recoverable errors.
 func (s *shards) sendSamplesWithBackoff(samples model.Samples) {
 	backoff := s.qm.cfg.MinBackoff
+	req := ToWriteRequest(samples)
+
 	for retries := s.qm.cfg.MaxRetries; retries > 0; retries-- {
 		begin := time.Now()
-		req := ToWriteRequest(samples)
-		err := s.qm.client.Store(req)
+		err := s.qm.client.Store(s.ctx, req)
 
 		sentBatchDuration.WithLabelValues(s.qm.queueName).Observe(time.Since(begin).Seconds())
 		if err == nil {
@@ -491,7 +532,7 @@ func (s *shards) sendSamplesWithBackoff(samples model.Samples) {
 		if _, ok := err.(recoverableError); !ok {
 			break
 		}
-		time.Sleep(backoff)
+		time.Sleep(time.Duration(backoff))
 		backoff = backoff * 2
 		if backoff > s.qm.cfg.MaxBackoff {
 			backoff = s.qm.cfg.MaxBackoff

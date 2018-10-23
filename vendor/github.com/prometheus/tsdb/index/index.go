@@ -271,7 +271,9 @@ func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta
 	}
 	// We add padding to 16 bytes to increase the addressable space we get through 4 byte
 	// series references.
-	w.addPadding(16)
+	if err := w.addPadding(16); err != nil {
+		return errors.Errorf("failed to write padding bytes: %v", err)
+	}
 
 	if w.pos%16 != 0 {
 		return errors.Errorf("series write not 16-byte aligned at %d", w.pos)
@@ -653,6 +655,11 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 	return r, nil
 }
 
+// Version returns the file format version of the underlying index.
+func (r *Reader) Version() int {
+	return r.version
+}
+
 // Range marks a byte range.
 type Range struct {
 	Start, End int64
@@ -735,8 +742,8 @@ func (r *Reader) decbufUvarintAt(off int) decbuf {
 	b := r.b.Range(off, off+binary.MaxVarintLen32)
 
 	l, n := binary.Uvarint(b)
-	if n > binary.MaxVarintLen32 {
-		return decbuf{e: errors.New("invalid uvarint")}
+	if n <= 0 || n > binary.MaxVarintLen32 {
+		return decbuf{e: errors.Errorf("invalid uvarint %d", n)}
 	}
 
 	if r.b.Len() < off+n+int(l)+4 {
@@ -775,7 +782,7 @@ func (r *Reader) readSymbols(off int) error {
 
 	for d.err() == nil && d.len() > 0 && cnt > 0 {
 		s := d.uvarintStr()
-		r.symbols[uint32(nextPos)] = s
+		r.symbols[nextPos] = s
 
 		if r.version == 2 {
 			nextPos++
@@ -795,7 +802,7 @@ func (r *Reader) readOffsetTable(off uint64, f func([]string, uint64) error) err
 	cnt := d.be32()
 
 	for d.err() == nil && d.len() > 0 && cnt > 0 {
-		keyCount := int(d.uvarint())
+		keyCount := d.uvarint()
 		keys := make([]string, 0, keyCount)
 
 		for i := 0; i < keyCount; i++ {
@@ -1033,7 +1040,7 @@ func (dec *Decoder) Series(b []byte, lbls *labels.Labels, chks *[]chunks.Meta) e
 
 	d := decbuf{b: b}
 
-	k := int(d.uvarint())
+	k := d.uvarint()
 
 	for i := 0; i < k; i++ {
 		lno := uint32(d.uvarint())
@@ -1056,7 +1063,7 @@ func (dec *Decoder) Series(b []byte, lbls *labels.Labels, chks *[]chunks.Meta) e
 	}
 
 	// Read the chunks meta data.
-	k = int(d.uvarint())
+	k = d.uvarint()
 
 	if k == 0 {
 		return nil
