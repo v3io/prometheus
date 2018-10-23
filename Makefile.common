@@ -39,8 +39,7 @@ DOCKER_IMAGE_TAG        ?= $(subst /,-,$(shell git rev-parse --abbrev-ref HEAD))
 DOCKER_REPO             ?= prom
 
 .PHONY: all
-#all: style staticcheck unused build test
-all: style staticcheck build test
+all: style staticcheck unused build test
 
 # This rule is used to forward a target like "build" to "common-build".  This
 # allows a new "build" target to be defined in a Makefile which includes this
@@ -95,8 +94,8 @@ common-staticcheck: $(STATICCHECK)
 
 .PHONY: common-unused
 common-unused: $(GOVENDOR)
-	@echo ">> running check for unused packages. [@$(GOVENDOR) list +unused]"
-	@$(GOVENDOR) list +unused | grep . && exit 1 || echo 'No unused packages'
+	@echo ">> running check for unused packages. [@$(GOVENDOR) list +unused,^vendor]"
+	@$(GOVENDOR) list +unused,^vendor | grep . && exit 1 || echo 'No unused packages'
 
 .PHONY: common-build
 common-build: promu
