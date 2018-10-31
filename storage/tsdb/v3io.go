@@ -51,7 +51,7 @@ type ReadyStorage struct {
 }
 
 // Set the storage.
-func (s *ReadyStorage) Set(db *tsdb.DB, startTimeMargin int64) {
+func (s *ReadyStorage) Set(db *tsdb.DB, startTimeMargin int64) error {
 	var err error
 
 	s.mtx.Lock()
@@ -65,13 +65,19 @@ func (s *ReadyStorage) Set(db *tsdb.DB, startTimeMargin int64) {
 	s.logger.Log("msg", "Creating initial v3io adapter", "configPath", configPath)
 
 	// create the initial v3io adapter
-	s.v3ioPromAdapter, err = s.createV3ioPromAdapater(configPath)
+	adapter, err := s.createV3ioPromAdapater(configPath)
 	if err != nil {
-		level.Warn(s.logger).Log("msg", "Failed to create v3io prometheus adapter", "err", err.Error())
+		return errors.Wrap(err, "failed to create v3io prometheus adapter")
 	}
+	s.v3ioPromAdapter = adapter
 
 	// watch configuration file for changes
 	s.watchConfigForChanges(configPath)
+	if err != nil {
+		return errors.Wrap(err, "failed to start config watch")
+	}
+
+	return nil
 }
 
 // Get the storage.

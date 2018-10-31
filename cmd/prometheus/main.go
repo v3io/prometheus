@@ -475,7 +475,7 @@ func main() {
 				select {
 				case <-dbOpen:
 					break
-				// In case a shutdown is initiated before the dbOpen is released
+					// In case a shutdown is initiated before the dbOpen is released
 				case <-cancel:
 					reloadReady.Close()
 					return nil
@@ -514,7 +514,10 @@ func main() {
 				level.Info(logger).Log("msg", "TSDB started")
 
 				startTimeMargin := int64(2 * time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)
-				localStorage.Set(db, startTimeMargin)
+				err = localStorage.Set(db, startTimeMargin)
+				if err != nil {
+					return err
+				}
 				close(dbOpen)
 				<-cancel
 				return nil
