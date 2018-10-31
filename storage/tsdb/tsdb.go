@@ -43,11 +43,13 @@ type ReadyStorage struct {
 }
 
 // Set the storage.
-func (s *ReadyStorage) Set(db *tsdb.DB, startTimeMargin int64) {
+func (s *ReadyStorage) Set(db *tsdb.DB, startTimeMargin int64) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
 	s.a = &adapter{db: db, startTimeMargin: startTimeMargin}
+
+	return nil
 }
 
 // Get the storage.
