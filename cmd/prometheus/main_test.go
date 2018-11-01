@@ -60,7 +60,7 @@ func TestMain(m *testing.M) {
 }
 
 // As soon as prometheus starts responding to http request should be able to accept Interrupt signals for a gracefull shutdown.
-func TestStartupInterrupt(t *testing.T) {
+func testStartupInterrupt(t *testing.T) { // ignore - doesn't work without a V3IO environment
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
 	}
