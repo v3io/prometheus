@@ -48,12 +48,11 @@ type ReadyStorage struct {
 	v3ioPromAdapter storage.Storage
 	logger          log.Logger
 	closed          bool
+	error           error
 }
 
 // Set the storage.
 func (s *ReadyStorage) Set(db *tsdb.DB, startTimeMargin int64) {
-	var err error
-
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
@@ -65,13 +64,21 @@ func (s *ReadyStorage) Set(db *tsdb.DB, startTimeMargin int64) {
 	s.logger.Log("msg", "Creating initial v3io adapter", "configPath", configPath)
 
 	// create the initial v3io adapter
-	s.v3ioPromAdapter, err = s.createV3ioPromAdapater(configPath)
+	adapter, err := s.createV3ioPromAdapater(configPath)
 	if err != nil {
-		level.Warn(s.logger).Log("msg", "Failed to create v3io prometheus adapter", "err", err.Error())
+		s.error = errors.Wrap(err, "failed to create v3io prometheus adapter")
+		return
 	}
+	s.v3ioPromAdapter = adapter
 
 	// watch configuration file for changes
 	s.watchConfigForChanges(configPath)
+	if err != nil {
+		s.error = errors.Wrap(err, "failed to start config watch")
+		return
+	}
+
+	s.error = nil
 }
 
 // Get the storage.
@@ -88,6 +95,10 @@ func (s *ReadyStorage) StartTime() (int64, error) {
 func (s *ReadyStorage) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 	s.logger.Log("msg", "Querier requested", "mint", mint, "maxt", maxt)
 
+	if s.error != nil {
+		return nil, errors.Wrap(s.error, "cannot return a querier without an adapter")
+	}
+
 	if !reflect.ValueOf(s.v3ioPromAdapter).IsNil() {
 		return s.v3ioPromAdapter.Querier(ctx, mint, maxt) //NEW
 	}
@@ -98,6 +109,10 @@ func (s *ReadyStorage) Querier(ctx context.Context, mint, maxt int64) (storage.Q
 // Appender implements the Storage interface.
 func (s *ReadyStorage) Appender() (storage.Appender, error) {
 	s.logger.Log("msg", "Appended requested")
+
+	if s.error != nil {
+		return nil, errors.Wrap(s.error, "cannot return an appender without an adapter")
+	}
 
 	if !reflect.ValueOf(s.v3ioPromAdapter).IsNil() {
 		return s.v3ioPromAdapter.Appender() //NEW
