@@ -52,6 +52,8 @@ selectors](basics.md#time-series-selectors) like `http_requests_total` or
 `<duration>` placeholders refer to Prometheus duration strings of the form
 `[0-9]+[smhdwy]`. For example, `5m` refers to a duration of 5 minutes.
 
+`<bool>` placeholders refer to boolean values (strings `true` and `false`).
+
 ## Expression queries
 
 Query language expressions may be evaluated at a single instant or over a range
@@ -132,7 +134,7 @@ URL query parameters:
 - `query=<string>`: Prometheus expression query string.
 - `start=<rfc3339 | unix_timestamp>`: Start timestamp.
 - `end=<rfc3339 | unix_timestamp>`: End timestamp.
-- `step=<duration>`: Query resolution step width.
+- `step=<duration | float>`: Query resolution step width in `duration` format or float number of seconds.
 - `timeout=<duration>`: Evaluation timeout. Optional. Defaults to and
    is capped by the value of the `-query.timeout` flag.
 
@@ -329,7 +331,7 @@ Both the active and dropped targets are part of the response.
 ```json
 $ curl http://localhost:9090/api/v1/targets
 {
-  "status": "success",                                                                                                                                [3/11]
+  "status": "success",
   "data": {
     "activeTargets": [
       {
@@ -360,6 +362,187 @@ $ curl http://localhost:9090/api/v1/targets
       }
     ]
   }
+}
+```
+
+
+## Rules
+
+The `/rules` API endpoint returns a list of alerting and recording rules that
+are currently loaded. In addition it returns the currently active alerts fired
+by the Prometheus instance of each alerting rule.
+
+As the `/rules` endpoint is fairly new, it does not have the same stability
+guarantees as the overarching API v1.
+
+```
+GET /api/v1/rules
+```
+
+```json
+$ curl http://localhost:9090/api/v1/rules
+
+{
+    "data": {
+        "groups": [
+            {
+                "rules": [
+                    {
+                        "alerts": [
+                            {
+                                "activeAt": "2018-07-04T20:27:12.60602144+02:00",
+                                "annotations": {
+                                    "summary": "High request latency"
+                                },
+                                "labels": {
+                                    "alertname": "HighRequestLatency",
+                                    "severity": "page"
+                                },
+                                "state": "firing",
+                                "value": 1
+                            }
+                        ],
+                        "annotations": {
+                            "summary": "High request latency"
+                        },
+                        "duration": 600,
+                        "health": "ok",
+                        "labels": {
+                            "severity": "page"
+                        },
+                        "name": "HighRequestLatency",
+                        "query": "job:request_latency_seconds:mean5m{job=\"myjob\"} > 0.5",
+                        "type": "alerting"
+                    },
+                    {
+                        "health": "ok",
+                        "name": "job:http_inprogress_requests:sum",
+                        "query": "sum(http_inprogress_requests) by (job)",
+                        "type": "recording"
+                    }
+                ],
+                "file": "/rules.yaml",
+                "interval": 60,
+                "name": "example"
+            }
+        ]
+    },
+    "status": "success"
+}
+```
+
+
+## Alerts
+
+The `/alerts` endpoint returns a list of all active alerts.
+
+As the `/alerts` endpoint is fairly new, it does not have the same stability
+guarantees as the overarching API v1.
+
+```
+GET /api/v1/alerts
+```
+
+```json
+$ curl http://localhost:9090/api/v1/alerts
+
+{
+    "data": {
+        "alerts": [
+            {
+                "activeAt": "2018-07-04T20:27:12.60602144+02:00",
+                "annotations": {},
+                "labels": {
+                    "alertname": "my-alert"
+                },
+                "state": "firing",
+                "value": 1
+            }
+        ]
+    },
+    "status": "success"
+}
+```
+
+## Querying target metadata
+
+The following endpoint returns metadata about metrics currently scraped by targets.
+This is **experimental** and might change in the future.
+
+```
+GET /api/v1/targets/metadata
+```
+
+URL query parameters:
+
+- `match_target=<label_selectors>`: Label selectors that match targets by their label sets. All targets are selected if left empty.
+- `metric=<string>`: A metric name to retrieve metadata for. All metric metadata is retrieved if left empty.
+- `limit=<number>`: Maximum number of targets to match.
+
+The `data` section of the query result consists of a list of objects that
+contain metric metadata and the target label set.
+
+The following example returns all metadata entries for the `go_goroutines` metric
+from the first two targets with label `job="prometheus"`.
+
+```json
+curl -G http://localhost:9091/api/v1/targets/metadata \
+    --data-urlencode 'metric=go_goroutines' \
+    --data-urlencode 'match_target={job="prometheus"}' \
+    --data-urlencode 'limit=2'
+{
+  "status": "success",
+  "data": [
+    {
+      "target": {
+        "instance": "127.0.0.1:9090",
+        "job": "prometheus"
+      },
+      "type": "gauge",
+      "help": "Number of goroutines that currently exist."
+    },
+    {
+      "target": {
+        "instance": "127.0.0.1:9091",
+        "job": "prometheus"
+      },
+      "type": "gauge",
+      "help": "Number of goroutines that currently exist."
+    }
+  ]
+}
+```
+
+The following example returns metadata for all metrics for all targets with
+label `instance="127.0.0.1:9090`.
+
+```json
+curl -G http://localhost:9091/api/v1/targets/metadata \
+    --data-urlencode 'match_target={instance="127.0.0.1:9090"}'
+{
+  "status": "success",
+  "data": [
+    // ...
+    {
+      "target": {
+        "instance": "127.0.0.1:9090",
+        "job": "prometheus"
+      },
+      "metric": "prometheus_treecache_zookeeper_failures_total",
+      "type": "counter",
+      "help": "The total number of ZooKeeper failures."
+    },
+    {
+      "target": {
+        "instance": "127.0.0.1:9090",
+        "job": "prometheus"
+      },
+      "metric": "prometheus_tsdb_reloads_total",
+      "type": "counter",
+      "help": "Number of times the database reloaded block data from disk."
+    },
+    // ...
+  ]
 }
 ```
 
@@ -452,9 +635,10 @@ We also expose a gRPC API whose definition can be found [here](https://github.co
 
 ### Snapshot
 Snapshot creates a snapshot of all current data into `snapshots/<datetime>-<rand>` under the TSDB's data directory and returns the directory as response.
+It will optionally skip snapshotting data that is only present in the head block, and which has not yet been compacted to disk.
 
 ```
-POST /api/v1/admin/tsdb/snapshot
+POST /api/v1/admin/tsdb/snapshot?skip_head=<bool>
 ```
 
 ```json
@@ -491,8 +675,8 @@ Not mentioning both start and end times would clear all the data for the matched
 Example:
 
 ```json
-$ curl -X DELETE \                                                              
-  -g 'http://localhost:9090/api/v1/series?match[]=up&match[]=process_start_time_seconds{job="prometheus"}'
+$ curl -X POST \
+  -g 'http://localhost:9090/api/v1/admin/tsdb/delete_series?match[]=up&match[]=process_start_time_seconds{job="prometheus"}'
 ```
 *New in v2.1*
 
