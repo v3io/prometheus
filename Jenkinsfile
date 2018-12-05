@@ -1,6 +1,7 @@
 label = "${UUID.randomUUID().toString()}"
 BUILD_FOLDER = "/go"
 docker_user = "iguaziodocker"
+docker_credentials = "iguazio-prod-docker-credentials"
 git_project = "prometheus"
 git_project_user = "v3io"
 git_deploy_user = "iguazio-prod-git-user"
@@ -109,25 +110,13 @@ spec:
                             cd ${BUILD_FOLDER}/src/github.com/${git_project}/${git_project}
                             docker build . -t ${docker_user}/v3io-prom:${TAG_VERSION} -f Dockerfile.multi
                         """
-                        withDockerRegistry([credentialsId: "472293cc-61bc-4e9f-aecb-1d8a73827fae", url: ""]) {
-                            sh "docker push ${docker_user}/v3io-prom:${TAG_VERSION}"
-                        }
                     }
                 }
 
-                stage('git push') {
-                    container('jnlp') {
-                        try {
-                            sh """
-                                git config --global user.email '${GIT_USERNAME}@iguazio.com'
-                                git config --global user.name '${GIT_USERNAME}'
-                                cd ${BUILD_FOLDER}/src/github.com/${git_project}/${git_project};
-                                git add vendor/github.com/v3io/v3io-tsdb;
-                                git commit -am 'Updated TSDB to v${V3IO_TSDB_VERSION}';
-                                git push origin master
-                            """
-                        } catch (err) {
-                            echo "Can not push code to git"
+                stage('push to hub') {
+                    container('docker-cmd') {
+                        withDockerRegistry([credentialsId: docker_credentials, url: ""]) {
+                            sh "docker push ${docker_user}/v3io-prom:${TAG_VERSION}"
                         }
                     }
                 }
