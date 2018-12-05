@@ -1,10 +1,10 @@
 label = "${UUID.randomUUID().toString()}"
 BUILD_FOLDER = "/go"
-docker_user = "gallziguazio"
+docker_user = "iguaziodocker"
 git_project = "prometheus"
-github_project_user = "gkirok"
-git_deploy_user = "iguazio-dev-git-user"
-git_deploy_user_token = "iguazio-dev-git-user-token"
+git_project_user = "v3io"
+git_deploy_user = "iguazio-prod-git-user"
+git_deploy_user_token = "iguazio-prod-git-user-token"
 
 properties([pipelineTriggers([[$class: 'PeriodicFolderTrigger', interval: '2m']])])
 podTemplate(label: "${git_project}-${label}", yaml: """
@@ -92,10 +92,10 @@ spec:
 
                         sh """ 
                             cd ${BUILD_FOLDER}
-                            git clone https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/${github_project_user}/${git_project}.git src/github.com/${git_project}/${git_project}
+                            git clone https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/${git_project_user}/${git_project}.git src/github.com/${git_project}/${git_project}
                             cd ${BUILD_FOLDER}/src/github.com/${git_project}/${git_project}
                             rm -rf vendor/github.com/v3io/v3io-tsdb/
-                            git clone https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/${github_project_user}/v3io-tsdb.git vendor/github.com/v3io/v3io-tsdb
+                            git clone https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/${git_project_user}/v3io-tsdb.git vendor/github.com/v3io/v3io-tsdb
                             cd vendor/github.com/v3io/v3io-tsdb
                             git checkout "v${V3IO_TSDB_VERSION}"
                             rm -rf .git vendor/github.com/${git_project}
