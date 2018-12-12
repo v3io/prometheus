@@ -1,7 +1,12 @@
 label = "${UUID.randomUUID().toString()}"
 BUILD_FOLDER = "/go"
+quay_user = "iguazio"
+quay_credentials = "iguazio-prod-quay-credentials"
 docker_user = "iguaziodocker"
 docker_credentials = "iguazio-prod-docker-credentials"
+artifactory_user = "k8s"
+artifactory_url = "iguazio-prod-artifactory-url"
+artifactory_credentials = "iguazio-prod-artifactory-credentials"
 git_project = "prometheus"
 git_project_user = "v3io"
 git_deploy_user = "iguazio-prod-git-user"
@@ -52,7 +57,8 @@ spec:
     node("${git_project}-${label}") {
         withCredentials([
                 usernamePassword(credentialsId: git_deploy_user, passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME'),
-                string(credentialsId: git_deploy_user_token, variable: 'GIT_TOKEN')
+                string(credentialsId: git_deploy_user_token, variable: 'GIT_TOKEN'),
+                string(credentialsId: artifactory_url, variable: 'ARTIFACTORY_URL')
         ]) {
             def AUTO_TAG
             def TAG_VERSION
@@ -104,21 +110,44 @@ spec:
                     }
                 }
 
-                stage('build in dood') {
+                stage('build prometheus in dood') {
                     container('docker-cmd') {
                         sh """
                             cd ${BUILD_FOLDER}/src/github.com/${git_project}/${git_project}
-                            docker build . -t ${docker_user}/v3io-prom:${TAG_VERSION} -f Dockerfile.multi
+                            docker build . -f Dockerfile.multi --tag ${docker_user}/v3io-prom:${TAG_VERSION} --tag ${docker_user}/v3io-prom:latest --tag quay.io/${quay_user}/v3io-prom:${TAG_VERSION} --tag quay.io/${quay_user}/v3io-prom:latest --tag ${ARTIFACTORY_URL}/${artifactory_user}/v3io-prom:${TAG_VERSION} --tag ${ARTIFACTORY_URL}/${artifactory_user}/v3io-prom:latest
                         """
                     }
                 }
 
                 stage('push to hub') {
                     container('docker-cmd') {
-                        withDockerRegistry([credentialsId: docker_credentials, url: ""]) {
-                            sh "docker push ${docker_user}/v3io-prom:${TAG_VERSION}"
+                        withDockerRegistry([credentialsId: docker_credentials, url: "https://index.docker.io/v1/"]) {
+                            sh "docker push docker.io/${docker_user}/v3io-prom:${TAG_VERSION}"
+                            sh "docker push docker.io/${docker_user}/v3io-prom:latest"
                         }
                     }
+                }
+
+                stage('push to quay') {
+                    container('docker-cmd') {
+                        withDockerRegistry([credentialsId: quay_credentials, url: "https://quay.io/api/v1/"]) {
+                            sh "docker push quay.io/${quay_user}/v3io-prom:${TAG_VERSION}"
+                            sh "docker push quay.io/${quay_user}/v3io-prom:latest"
+                        }
+                    }
+                }
+
+                stage('push to artifactory') {
+                    container('docker-cmd') {
+                        withDockerRegistry([credentialsId: artifactory_credentials, url: "https://${ARTIFACTORY_URL}/api/v1/"]) {
+                            sh "docker push ${ARTIFACTORY_URL}/${artifactory_user}/v3io-prom:${TAG_VERSION}"
+                            sh "docker push ${ARTIFACTORY_URL}/${artifactory_user}/v3io-prom:latest"
+                        }
+                    }
+                }
+
+                stage('update release status') {
+                    sh "release_id=\$(curl -H \"Content-Type: application/json\" -H \"Authorization: token ${GIT_TOKEN}\" -X GET https://api.github.com/repos/${git_project_user}/${git_project}/releases/tags/v${TAG_VERSION} | python -c 'import json,sys;obj=json.load(sys.stdin);print obj[\"id\"]'); curl -v -H \"Content-Type: application/json\" -H \"Authorization: token ${GIT_TOKEN}\" -X PATCH https://api.github.com/repos/${git_project_user}/${git_project}/releases/\${release_id} -d '{\"prerelease\": false}'"
                 }
             } else {
                 stage('warning') {
