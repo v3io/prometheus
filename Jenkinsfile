@@ -1,5 +1,6 @@
 label = "${UUID.randomUUID().toString()}"
 BUILD_FOLDER = "/go"
+expired=240
 quay_user = "iguazio"
 quay_credentials = "iguazio-prod-quay-credentials"
 docker_user = "iguaziodocker"
@@ -89,7 +90,7 @@ spec:
                 }
             }
 
-            if ( TAG_VERSION != null && TAG_VERSION.length() > 0 && PUBLISHED_BEFORE < 240 ) {
+            if ( TAG_VERSION != null && TAG_VERSION.length() > 0 && PUBLISHED_BEFORE < expired ) {
                 stage('prepare sources') {
                     container('jnlp') {
                         V3IO_TSDB_VERSION = sh(
@@ -151,7 +152,7 @@ spec:
                 }
             } else {
                 stage('warning') {
-                    if (PUBLISHED_BEFORE >= 240) {
+                    if (PUBLISHED_BEFORE >= expired) {
                         echo "Tag too old, published before $PUBLISHED_BEFORE minutes."
                     } else if (AUTO_TAG.startsWith("Autorelease")) {
                         echo "Autorelease does not trigger this job."
