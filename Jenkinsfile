@@ -54,68 +54,59 @@ spec:
             def TAG_VERSION
             def V3IO_TSDB_VERSION
             pipelinex = library(identifier: 'pipelinex@DEVOPS-204-pipelinex', retriever: modernSCM(
-                    [$class: 'GitSCMSource',
+                    [$class       : 'GitSCMSource',
                      credentialsId: git_deploy_user_private_key,
-                     remote: "git@github.com:iguazio/pipelinex.git"])).com.iguazio.pipelinex
-            multi_credentials=[pipelinex.DockerRepo.ARTIFACTORY_IGUAZIO, pipelinex.DockerRepo.DOCKER_HUB, pipelinex.DockerRepo.QUAY_IO]
+                     remote       : "git@github.com:iguazio/pipelinex.git"])).com.iguazio.pipelinex
+            multi_credentials = [pipelinex.DockerRepo.ARTIFACTORY_IGUAZIO, pipelinex.DockerRepo.DOCKER_HUB, pipelinex.DockerRepo.QUAY_IO]
 
-            stage('get tag data') {
-                container('jnlp') {
-                    TAG_VERSION = github.get_tag_version(TAG_NAME, '^v[\\.0-9]*.*-v[\\.0-9]*\$')
-                    PUBLISHED_BEFORE = github.get_tag_published_before(git_project, git_project_user, "v${TAG_VERSION}", GIT_TOKEN)
-
-                    echo "$TAG_VERSION"
-                    echo "$PUBLISHED_BEFORE"
-                }
-            }
-
-            if ( TAG_VERSION != null && TAG_VERSION.length() > 0 && PUBLISHED_BEFORE < expired ) {
-                stage('prepare sources') {
+            common.notify_slack {
+                stage('get tag data') {
                     container('jnlp') {
-                        V3IO_TSDB_VERSION = sh(
-                                script: "echo ${TAG_VERSION} | awk -F '-v' '{print \$2}'",
-                                returnStdout: true
-                        ).trim()
+                        TAG_VERSION = github.get_tag_version(TAG_NAME, '^v[\\.0-9]*.*-v[\\.0-9]*\$')
+                        DOCKER_TAG_VERSION = github.get_docker_tag_version(TAG_NAME, '^v[\\.0-9]*.*-v[\\.0-9]*\$')
+                        PUBLISHED_BEFORE = github.get_tag_published_before(git_project, git_project_user, "${TAG_VERSION}", GIT_TOKEN)
 
-                        dir("${BUILD_FOLDER}/src/github.com/${git_project}/${git_project}") {
-                            git(changelog: false, credentialsId: git_deploy_user_private_key, poll: false, url: "git@github.com:${git_project_user}/${git_project}.git")
-                            sh("git checkout v${TAG_VERSION}")
-                            sh("rm -rf vendor/github.com/v3io/v3io-tsdb/")
-                        }
-
-                        dir("${BUILD_FOLDER}/src/github.com/${git_project}/${git_project}/vendor/github.com/v3io/v3io-tsdb") {
-                            git(changelog: false, credentialsId: git_deploy_user_private_key, poll: false, url: "git@github.com:${git_project_user}/v3io-tsdb.git")
-                            sh("git checkout v${V3IO_TSDB_VERSION}")
-                            sh("rm -rf vendor/github.com/${git_project}")
-                        }
+                        echo "$TAG_VERSION"
+                        echo "$PUBLISHED_BEFORE"
                     }
                 }
 
-                stage("build ${git_project} in dood") {
-                    container('docker-cmd') {
-                        dir("${BUILD_FOLDER}/src/github.com/${git_project}/${git_project}") {
-                            sh("docker build . -f Dockerfile.multi --tag v3io-prom:${TAG_VERSION}")
+                if (TAG_VERSION != null && TAG_VERSION.length() > 0 && PUBLISHED_BEFORE < expired) {
+                    stage('prepare sources') {
+                        container('jnlp') {
+                            dir("${BUILD_FOLDER}/src/github.com/${git_project}/${git_project}") {
+                                git(changelog: false, credentialsId: git_deploy_user_private_key, poll: false, url: "git@github.com:${git_project_user}/${git_project}.git")
+                                sh("git checkout ${TAG_VERSION}")
+                            }
                         }
                     }
-                }
 
-                stage('push') {
-                    container('docker-cmd') {
-                        dockerx.images_push_multi_registries(["v3io-prom:${TAG_VERSION}"], multi_credentials)
+                    stage("build ${git_project} in dood") {
+                        container('docker-cmd') {
+                            dir("${BUILD_FOLDER}/src/github.com/${git_project}/${git_project}") {
+                                sh("docker build . -f Dockerfile.multi --tag v3io-prom:${DOCKER_TAG_VERSION}")
+                            }
+                        }
                     }
-                }
 
-                stage('update release status') {
-                    container('jnlp') {
-                        github.update_release_status(git_project, git_project_user, "v${TAG_VERSION}", GIT_TOKEN)
+                    stage('push') {
+                        container('docker-cmd') {
+                            dockerx.images_push_multi_registries(["v3io-prom:${DOCKER_TAG_VERSION}"], multi_credentials)
+                        }
                     }
-                }
-            } else {
-                stage('warning') {
-                    if (PUBLISHED_BEFORE >= expired) {
-                        echo "Tag too old, published before $PUBLISHED_BEFORE minutes."
-                    } else {
-                        echo "${TAG_VERSION} is not release tag."
+
+                    stage('update release status') {
+                        container('jnlp') {
+                            github.update_release_status(git_project, git_project_user, "${TAG_VERSION}", GIT_TOKEN)
+                        }
+                    }
+                } else {
+                    stage('warning') {
+                        if (PUBLISHED_BEFORE >= expired) {
+                            echo "Tag too old, published before $PUBLISHED_BEFORE minutes."
+                        } else {
+                            echo "${TAG_VERSION} is not release tag."
+                        }
                     }
                 }
             }
