@@ -64,7 +64,7 @@ spec:
                     container('jnlp') {
                         TAG_VERSION = github.get_tag_version(TAG_NAME, '^v[\\.0-9]*.*-v[\\.0-9]*\$')
                         DOCKER_TAG_VERSION = github.get_docker_tag_version(TAG_NAME, '^v[\\.0-9]*.*-v[\\.0-9]*\$')
-                        PUBLISHED_BEFORE = github.get_tag_published_before(git_project, git_project_user, "v${TAG_VERSION}", GIT_TOKEN)
+                        PUBLISHED_BEFORE = github.get_tag_published_before(git_project, git_project_user, "${TAG_VERSION}", GIT_TOKEN)
 
                         echo "$TAG_VERSION"
                         echo "$PUBLISHED_BEFORE"
@@ -74,21 +74,9 @@ spec:
                 if (TAG_VERSION != null && TAG_VERSION.length() > 0 && PUBLISHED_BEFORE < expired) {
                     stage('prepare sources') {
                         container('jnlp') {
-                            V3IO_TSDB_VERSION = sh(
-                                    script: "echo ${TAG_VERSION} | awk -F '-v' '{print \"v\"\$2}'",
-                                    returnStdout: true
-                            ).trim()
-
                             dir("${BUILD_FOLDER}/src/github.com/${git_project}/${git_project}") {
                                 git(changelog: false, credentialsId: git_deploy_user_private_key, poll: false, url: "git@github.com:${git_project_user}/${git_project}.git")
                                 sh("git checkout ${TAG_VERSION}")
-                                sh("rm -rf vendor/github.com/v3io/v3io-tsdb/")
-                            }
-
-                            dir("${BUILD_FOLDER}/src/github.com/${git_project}/${git_project}/vendor/github.com/v3io/v3io-tsdb") {
-                                git(changelog: false, credentialsId: git_deploy_user_private_key, poll: false, url: "git@github.com:${git_project_user}/v3io-tsdb.git")
-                                sh("git checkout ${V3IO_TSDB_VERSION}")
-                                sh("rm -rf vendor/github.com/${git_project}")
                             }
                         }
                     }
