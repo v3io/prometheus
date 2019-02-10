@@ -19,6 +19,7 @@ package tsdb
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"reflect"
 	"sync"
@@ -199,11 +200,26 @@ func (s *ReadyStorage) createV3ioPromAdapater(configPath string) (*promtsdb.V3io
 		return nil, nil
 	}
 
-	if jsonLoadedConfig, err := json.Marshal(&loadedConfig); err == nil {
-		s.logger.Log("msg", "Creating v3io adapter", "config", string(jsonLoadedConfig))
-	}
+	s.logger.Log("msg", "Creating v3io adapter", "config", getSanitizedConfigString(*loadedConfig))
 
 	return promtsdb.NewV3ioProm(loadedConfig, nil, nil)
+}
+
+func getSanitizedConfigString(config config.V3ioConfig) string {
+	sanitizedConfig := config
+	if sanitizedConfig.Password != "" {
+		sanitizedConfig.Password = "SANITIZED"
+	}
+	if sanitizedConfig.AccessKey != "" {
+		sanitizedConfig.AccessKey = "SANITIZED"
+	}
+
+	sanitizedConfigJson, err := json.Marshal(&sanitizedConfig)
+	if err == nil {
+		return string(sanitizedConfigJson)
+	} else {
+		return fmt.Sprintf("Unable to read config: %v", err)
+	}
 }
 
 // Adapter return an adapter as storage.Storage.
