@@ -21,13 +21,9 @@ podTemplate(label: "${git_project}-${label}", inheritFrom: "jnlp-docker") {
             common.notify_slack {
                 stage('get tag data') {
                     container('jnlp') {
-                        try {
-                            TAG_VERSION = github.get_tag_version(TAG_NAME, '^(v[\\.0-9]*.*-v[\\.0-9]*|unstable)\$')
-                            DOCKER_TAG_VERSION = github.get_docker_tag_version(TAG_NAME, '^(v[\\.0-9]*.*-v[\\.0-9]*|unstable)\$')
-                        } catch(Exception e) {
-                            currentBuild.result = 'ABORTED'
-                            error("${TAG_NAME} is not release tag.")
-                        }
+                        TAG_VERSION = github.get_tag_version(TAG_NAME, '^(v[\\.0-9]*.*-v[\\.0-9]*|unstable)\$')
+                        DOCKER_TAG_VERSION = github.get_docker_tag_version(TAG_NAME, '^(v[\\.0-9]*.*-v[\\.0-9]*|unstable)\$')
+
                         echo "$TAG_VERSION"
                         echo "$DOCKER_TAG_VERSION"
                     }
