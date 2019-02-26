@@ -11,6 +11,7 @@ podTemplate(label: "${git_project}-${label}", inheritFrom: "jnlp-docker") {
                 string(credentialsId: git_deploy_user_token, variable: 'GIT_TOKEN')
         ]) {
             def TAG_VERSION
+            def DOCKER_TAG_VERSION
             pipelinex = library(identifier: 'pipelinex@_test_gallz', retriever: modernSCM(
                     [$class       : 'GitSCMSource',
                      credentialsId: git_deploy_user_private_key,
@@ -20,11 +21,13 @@ podTemplate(label: "${git_project}-${label}", inheritFrom: "jnlp-docker") {
             common.notify_slack {
                 stage('get tag data') {
                     container('jnlp') {
-                        TAG_VERSION = github.get_tag_version(TAG_NAME, '^(v[\\.0-9]*.*-v[\\.0-9]*)\$')
-                        DOCKER_TAG_VERSION = github.get_docker_tag_version(TAG_NAME, '^(v[\\.0-9]*.*-v[\\.0-9]*)\$')
-
+                        try {
+                            TAG_VERSION = github.get_tag_version(TAG_NAME, '^(v[\\.0-9]*.*-v[\\.0-9]*)\$')
+                            DOCKER_TAG_VERSION = github.get_docker_tag_version(TAG_NAME, '^(v[\\.0-9]*.*-v[\\.0-9]*)\$')
+                        } catch(Exception e) {
+                            error("${TAG_NAME} is not release tag.")
+                        }
                         echo "$TAG_VERSION"
-                        echo "$PUBLISHED_BEFORE"
                     }
                 }
 
