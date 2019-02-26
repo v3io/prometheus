@@ -21,8 +21,8 @@ podTemplate(label: "${git_project}-${label}", inheritFrom: "jnlp-docker") {
             common.notify_slack {
                 stage('get tag data') {
                     container('jnlp') {
-                        TAG_VERSION = github.get_tag_version(TAG_NAME, '^v[\\.0-9]*.*-v[\\.0-9]*\$')
-                        DOCKER_TAG_VERSION = github.get_docker_tag_version(TAG_NAME, '^v[\\.0-9]*.*-v[\\.0-9]*\$')
+                        TAG_VERSION = github.get_tag_version(TAG_NAME, '^(v[\\.0-9]*.*-v[\\.0-9]*|unstable)\$')
+                        DOCKER_TAG_VERSION = github.get_docker_tag_version(TAG_NAME, '^(v[\\.0-9]*.*-v[\\.0-9]*|unstable)\$')
                         PUBLISHED_BEFORE = github.get_tag_published_before(git_project, git_project_user, "${TAG_VERSION}", GIT_TOKEN)
 
                         echo "$TAG_VERSION"
