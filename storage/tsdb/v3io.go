@@ -18,7 +18,6 @@ package tsdb
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"reflect"
 	"sync"
@@ -199,9 +198,7 @@ func (s *ReadyStorage) createV3ioPromAdapater(configPath string) (*promtsdb.V3io
 		return nil, nil
 	}
 
-	if jsonLoadedConfig, err := json.Marshal(&loadedConfig); err == nil {
-		s.logger.Log("msg", "Creating v3io adapter", "config", string(jsonLoadedConfig))
-	}
+	s.logger.Log("msg", "Creating v3io adapter", "config", loadedConfig.String())
 
 	return promtsdb.NewV3ioProm(loadedConfig, nil, nil)
 }
