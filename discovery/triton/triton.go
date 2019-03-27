@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/go-kit/kit/log"
@@ -33,12 +35,12 @@ import (
 
 const (
 	tritonLabel             = model.MetaLabelPrefix + "triton_"
+	tritonLabelGroups       = tritonLabel + "groups"
 	tritonLabelMachineID    = tritonLabel + "machine_id"
 	tritonLabelMachineAlias = tritonLabel + "machine_alias"
 	tritonLabelMachineBrand = tritonLabel + "machine_brand"
 	tritonLabelMachineImage = tritonLabel + "machine_image"
 	tritonLabelServerID     = tritonLabel + "server_id"
-	namespace               = "prometheus"
 )
 
 var (
@@ -65,6 +67,7 @@ type SDConfig struct {
 	Account         string                `yaml:"account"`
 	DNSSuffix       string                `yaml:"dns_suffix"`
 	Endpoint        string                `yaml:"endpoint"`
+	Groups          []string              `yaml:"groups,omitempty"`
 	Port            int                   `yaml:"port"`
 	RefreshInterval model.Duration        `yaml:"refresh_interval,omitempty"`
 	TLSConfig       config_util.TLSConfig `yaml:"tls_config,omitempty"`
@@ -80,16 +83,16 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if c.Account == "" {
-		return fmt.Errorf("Triton SD configuration requires an account")
+		return fmt.Errorf("triton SD configuration requires an account")
 	}
 	if c.DNSSuffix == "" {
-		return fmt.Errorf("Triton SD configuration requires a dns_suffix")
+		return fmt.Errorf("triton SD configuration requires a dns_suffix")
 	}
 	if c.Endpoint == "" {
-		return fmt.Errorf("Triton SD configuration requires an endpoint")
+		return fmt.Errorf("triton SD configuration requires an endpoint")
 	}
 	if c.RefreshInterval <= 0 {
-		return fmt.Errorf("Triton SD configuration requires RefreshInterval to be a positive integer")
+		return fmt.Errorf("triton SD configuration requires RefreshInterval to be a positive integer")
 	}
 	return nil
 }
@@ -102,11 +105,12 @@ func init() {
 // DiscoveryResponse models a JSON response from the Triton discovery.
 type DiscoveryResponse struct {
 	Containers []struct {
-		ServerUUID  string `json:"server_uuid"`
-		VMAlias     string `json:"vm_alias"`
-		VMBrand     string `json:"vm_brand"`
-		VMImageUUID string `json:"vm_image_uuid"`
-		VMUUID      string `json:"vm_uuid"`
+		Groups      []string `json:"groups"`
+		ServerUUID  string   `json:"server_uuid"`
+		VMAlias     string   `json:"vm_alias"`
+		VMBrand     string   `json:"vm_brand"`
+		VMImageUUID string   `json:"vm_image_uuid"`
+		VMUUID      string   `json:"vm_uuid"`
 	} `json:"containers"`
 }
 
@@ -155,7 +159,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer ticker.Stop()
 
 	// Get an initial set right away.
-	tg, err := d.refresh()
+	tg, err := d.refresh(ctx)
 	if err != nil {
 		level.Error(d.logger).Log("msg", "Refreshing targets failed", "err", err)
 	} else {
@@ -165,7 +169,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	for {
 		select {
 		case <-ticker.C:
-			tg, err := d.refresh()
+			tg, err := d.refresh(ctx)
 			if err != nil {
 				level.Error(d.logger).Log("msg", "Refreshing targets failed", "err", err)
 			} else {
@@ -177,7 +181,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 }
 
-func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
+func (d *Discovery) refresh(ctx context.Context) (tg *targetgroup.Group, err error) {
 	t0 := time.Now()
 	defer func() {
 		refreshDuration.Observe(time.Since(t0).Seconds())
@@ -187,26 +191,36 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 	}()
 
 	var endpoint = fmt.Sprintf("https://%s:%d/v%d/discover", d.sdConfig.Endpoint, d.sdConfig.Port, d.sdConfig.Version)
+	if len(d.sdConfig.Groups) > 0 {
+		groups := url.QueryEscape(strings.Join(d.sdConfig.Groups, ","))
+		endpoint = fmt.Sprintf("%s?groups=%s", endpoint, groups)
+	}
+
 	tg = &targetgroup.Group{
 		Source: endpoint,
 	}
 
-	resp, err := d.client.Get(endpoint)
+	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
-		return tg, fmt.Errorf("an error occurred when requesting targets from the discovery endpoint. %s", err)
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	resp, err := d.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("an error occurred when requesting targets from the discovery endpoint: %s", err)
 	}
 
 	defer resp.Body.Close()
 
 	data, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return tg, fmt.Errorf("an error occurred when reading the response body. %s", err)
+		return nil, fmt.Errorf("an error occurred when reading the response body: %s", err)
 	}
 
 	dr := DiscoveryResponse{}
 	err = json.Unmarshal(data, &dr)
 	if err != nil {
-		return tg, fmt.Errorf("an error occurred unmarshaling the disovery response json. %s", err)
+		return nil, fmt.Errorf("an error occurred unmarshaling the discovery response json: %s", err)
 	}
 
 	for _, container := range dr.Containers {
@@ -219,6 +233,12 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 		}
 		addr := fmt.Sprintf("%s.%s:%d", container.VMUUID, d.sdConfig.DNSSuffix, d.sdConfig.Port)
 		labels[model.AddressLabel] = model.LabelValue(addr)
+
+		if len(container.Groups) > 0 {
+			name := "," + strings.Join(container.Groups, ",") + ","
+			labels[tritonLabelGroups] = model.LabelValue(name)
+		}
+
 		tg.Targets = append(tg.Targets, labels)
 	}
 
