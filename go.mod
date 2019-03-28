@@ -137,4 +137,4 @@ replace labix.org/v2/mgo => github.com/go-mgo/mgo v0.0.0-20180705113738-7446a034
 
 replace launchpad.net/gocheck => github.com/go-check/check v0.0.0-20180628173108-788fd78401277ebd861206a03c884797c6ec5541
 
-replace github.com/v3io/v3io-tsdb => github.com/gtopper/v3io-tsdb v0.0.0-20181121191925-c619109fc2631f47e6512071a5805b7915e97987
+replace github.com/v3io/v3io-tsdb => github.com/v3io/v3io-tsdb v0.0.0-20190328071546-6dc31df70858386cb59ed495755859f73a247554
