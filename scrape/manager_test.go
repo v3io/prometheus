@@ -15,23 +15,20 @@ package scrape
 
 import (
 	"fmt"
+	"strconv"
 	"testing"
+	"time"
+
+	"github.com/prometheus/prometheus/pkg/relabel"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/util/testutil"
 
 	yaml "gopkg.in/yaml.v2"
 )
-
-func mustNewRegexp(s string) config.Regexp {
-	re, err := config.NewRegexp(s)
-	if err != nil {
-		panic(err)
-	}
-	return re
-}
 
 func TestPopulateLabels(t *testing.T) {
 	cases := []struct {
@@ -141,10 +138,10 @@ func TestPopulateLabels(t *testing.T) {
 				Scheme:      "https",
 				MetricsPath: "/metrics",
 				JobName:     "job",
-				RelabelConfigs: []*config.RelabelConfig{
+				RelabelConfigs: []*relabel.Config{
 					{
-						Action:       config.RelabelReplace,
-						Regex:        mustNewRegexp("(.*)"),
+						Action:       relabel.Replace,
+						Regex:        relabel.MustNewRegexp("(.*)"),
 						SourceLabels: model.LabelNames{"custom"},
 						Replacement:  "${1}",
 						TargetLabel:  string(model.AddressLabel),
@@ -173,10 +170,10 @@ func TestPopulateLabels(t *testing.T) {
 				Scheme:      "https",
 				MetricsPath: "/metrics",
 				JobName:     "job",
-				RelabelConfigs: []*config.RelabelConfig{
+				RelabelConfigs: []*relabel.Config{
 					{
-						Action:       config.RelabelReplace,
-						Regex:        mustNewRegexp("(.*)"),
+						Action:       relabel.Replace,
+						Regex:        relabel.MustNewRegexp("(.*)"),
 						SourceLabels: model.LabelNames{"custom"},
 						Replacement:  "${1}",
 						TargetLabel:  string(model.AddressLabel),
@@ -225,45 +222,149 @@ func TestPopulateLabels(t *testing.T) {
 	}
 }
 
-// TestScrapeManagerReloadNoChange tests that no scrape reload happens when there is no config change.
-func TestManagerReloadNoChange(t *testing.T) {
-	tsetName := "test"
+func loadConfiguration(t *testing.T, c string) *config.Config {
+	t.Helper()
 
-	cfgText := `
+	cfg := &config.Config{}
+	if err := yaml.UnmarshalStrict([]byte(c), cfg); err != nil {
+		t.Fatalf("Unable to load YAML config: %s", err)
+	}
+	return cfg
+}
+
+func noopLoop() loop {
+	return &testLoop{
+		startFunc: func(interval, timeout time.Duration, errc chan<- error) {},
+		stopFunc:  func() {},
+	}
+}
+
+func TestManagerApplyConfig(t *testing.T) {
+	// Valid initial configuration.
+	cfgText1 := `
 scrape_configs:
- - job_name: '` + tsetName + `'
+ - job_name: job1
    static_configs:
    - targets: ["foo:9090"]
-   - targets: ["bar:9090"]
 `
-	cfg := &config.Config{}
-	if err := yaml.UnmarshalStrict([]byte(cfgText), cfg); err != nil {
-		t.Fatalf("Unable to load YAML config cfgYaml: %s", err)
-	}
+	// Invalid configuration.
+	cfgText2 := `
+scrape_configs:
+ - job_name: job1
+   scheme: https
+   static_configs:
+   - targets: ["foo:9090"]
+   tls_config:
+     ca_file: /not/existing/ca/file
+`
+	// Valid configuration.
+	cfgText3 := `
+scrape_configs:
+ - job_name: job1
+   scheme: https
+   static_configs:
+   - targets: ["foo:9090"]
+`
+	var (
+		cfg1 = loadConfiguration(t, cfgText1)
+		cfg2 = loadConfiguration(t, cfgText2)
+		cfg3 = loadConfiguration(t, cfgText3)
+
+		ch = make(chan struct{}, 1)
+	)
 
 	scrapeManager := NewManager(nil, nil)
-	// Load the current config.
-	scrapeManager.ApplyConfig(cfg)
-
-	// As reload never happens, new loop should never be called.
-	newLoop := func(_ *Target, s scraper, _ int, _ bool, _ []*config.RelabelConfig) loop {
-		t.Fatal("reload happened")
-		return nil
+	newLoop := func(_ *Target, s scraper, _ int, _ bool, _ []*relabel.Config) loop {
+		ch <- struct{}{}
+		return noopLoop()
 	}
-
 	sp := &scrapePool{
-		appendable: &nopAppendable{},
-		targets:    map[uint64]*Target{},
+		appendable:    &nopAppendable{},
+		activeTargets: map[uint64]*Target{},
 		loops: map[uint64]loop{
-			1: &testLoop{},
+			1: noopLoop(),
 		},
 		newLoop: newLoop,
 		logger:  nil,
-		config:  cfg.ScrapeConfigs[0],
+		config:  cfg1.ScrapeConfigs[0],
 	}
 	scrapeManager.scrapePools = map[string]*scrapePool{
-		tsetName: sp,
+		"job1": sp,
 	}
 
-	scrapeManager.ApplyConfig(cfg)
+	// Apply the initial configuration.
+	if err := scrapeManager.ApplyConfig(cfg1); err != nil {
+		t.Fatalf("unable to apply configuration: %s", err)
+	}
+	select {
+	case <-ch:
+		t.Fatal("reload happened")
+	default:
+	}
+
+	// Apply a configuration for which the reload fails.
+	if err := scrapeManager.ApplyConfig(cfg2); err == nil {
+		t.Fatalf("expecting error but got none")
+	}
+	select {
+	case <-ch:
+		t.Fatal("reload happened")
+	default:
+	}
+
+	// Apply a configuration for which the reload succeeds.
+	if err := scrapeManager.ApplyConfig(cfg3); err != nil {
+		t.Fatalf("unable to apply configuration: %s", err)
+	}
+	select {
+	case <-ch:
+	default:
+		t.Fatal("reload didn't happen")
+	}
+
+	// Re-applying the same configuration shouldn't trigger a reload.
+	if err := scrapeManager.ApplyConfig(cfg3); err != nil {
+		t.Fatalf("unable to apply configuration: %s", err)
+	}
+	select {
+	case <-ch:
+		t.Fatal("reload happened")
+	default:
+	}
+}
+
+func TestManagerTargetsUpdates(t *testing.T) {
+	m := NewManager(nil, nil)
+
+	ts := make(chan map[string][]*targetgroup.Group)
+	go m.Run(ts)
+
+	tgSent := make(map[string][]*targetgroup.Group)
+	for x := 0; x < 10; x++ {
+
+		tgSent[strconv.Itoa(x)] = []*targetgroup.Group{
+			{
+				Source: strconv.Itoa(x),
+			},
+		}
+
+		select {
+		case ts <- tgSent:
+		case <-time.After(10 * time.Millisecond):
+			t.Error("Scrape manager's channel remained blocked after the set threshold.")
+		}
+	}
+
+	m.mtxScrape.Lock()
+	tsetActual := m.targetSets
+	m.mtxScrape.Unlock()
+
+	// Make sure all updates have been received.
+	testutil.Equals(t, tgSent, tsetActual)
+
+	select {
+	case <-m.triggerReload:
+	default:
+		t.Error("No scrape loops reload was triggered after targets update.")
+	}
 }

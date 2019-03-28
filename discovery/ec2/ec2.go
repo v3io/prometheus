@@ -43,8 +43,10 @@ const (
 	ec2LabelInstanceState   = ec2Label + "instance_state"
 	ec2LabelInstanceType    = ec2Label + "instance_type"
 	ec2LabelOwnerID         = ec2Label + "owner_id"
+	ec2LabelPlatform        = ec2Label + "platform"
 	ec2LabelPublicDNS       = ec2Label + "public_dns_name"
 	ec2LabelPublicIP        = ec2Label + "public_ip"
+	ec2LabelPrivateDNS      = ec2Label + "private_dns_name"
 	ec2LabelPrivateIP       = ec2Label + "private_ip"
 	ec2LabelPrimarySubnetID = ec2Label + "primary_subnet_id"
 	ec2LabelSubnetID        = ec2Label + "subnet_id"
@@ -165,7 +167,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer ticker.Stop()
 
 	// Get an initial set right away.
-	tg, err := d.refresh()
+	tg, err := d.refresh(ctx)
 	if err != nil {
 		level.Error(d.logger).Log("msg", "Refresh failed", "err", err)
 	} else {
@@ -179,7 +181,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	for {
 		select {
 		case <-ticker.C:
-			tg, err := d.refresh()
+			tg, err := d.refresh(ctx)
 			if err != nil {
 				level.Error(d.logger).Log("msg", "Refresh failed", "err", err)
 				continue
@@ -196,7 +198,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 }
 
-func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
+func (d *Discovery) refresh(ctx context.Context) (tg *targetgroup.Group, err error) {
 	t0 := time.Now()
 	defer func() {
 		ec2SDRefreshDuration.Observe(time.Since(t0).Seconds())
@@ -234,7 +236,7 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 
 	input := &ec2.DescribeInstancesInput{Filters: filters}
 
-	if err = ec2s.DescribeInstancesPages(input, func(p *ec2.DescribeInstancesOutput, lastPage bool) bool {
+	if err = ec2s.DescribeInstancesPagesWithContext(ctx, input, func(p *ec2.DescribeInstancesOutput, lastPage bool) bool {
 		for _, r := range p.Reservations {
 			for _, inst := range r.Instances {
 				if inst.PrivateIpAddress == nil {
@@ -249,8 +251,15 @@ func (d *Discovery) refresh() (tg *targetgroup.Group, err error) {
 				}
 
 				labels[ec2LabelPrivateIP] = model.LabelValue(*inst.PrivateIpAddress)
+				if inst.PrivateDnsName != nil {
+					labels[ec2LabelPrivateDNS] = model.LabelValue(*inst.PrivateDnsName)
+				}
 				addr := net.JoinHostPort(*inst.PrivateIpAddress, fmt.Sprintf("%d", d.port))
 				labels[model.AddressLabel] = model.LabelValue(addr)
+
+				if inst.Platform != nil {
+					labels[ec2LabelPlatform] = model.LabelValue(*inst.Platform)
+				}
 
 				if inst.PublicIpAddress != nil {
 					labels[ec2LabelPublicIP] = model.LabelValue(*inst.PublicIpAddress)

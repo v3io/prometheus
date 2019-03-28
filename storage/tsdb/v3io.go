@@ -19,6 +19,7 @@ package tsdb
 import (
 	"context"
 	"encoding/json"
+	"github.com/alecthomas/units"
 	"os"
 	"reflect"
 	"sync"
@@ -213,9 +214,6 @@ func Adapter(db *tsdb.DB, startTimeMargin int64) storage.Storage {
 
 // Options of the DB storage.
 type Options struct {
-	// The interval at which the write ahead log is flushed to disc.
-	WALFlushInterval time.Duration
-
 	// The timestamp range of head blocks after which they get persisted.
 	// It's the minimum duration of any persisted block.
 	MinBlockDuration model.Duration
@@ -223,11 +221,21 @@ type Options struct {
 	// The maximum timestamp range of compacted blocks.
 	MaxBlockDuration model.Duration
 
+	// The maximum size of each WAL segment file.
+	WALSegmentSize units.Base2Bytes
+
 	// Duration for how long to retain data.
-	Retention model.Duration
+	RetentionDuration model.Duration
+
+	// Maximum number of bytes to be retained.
+	MaxBytes units.Base2Bytes
 
 	// Disable creation and consideration of lockfile.
 	NoLockfile bool
+
+	// When true it disables the overlapping blocks check.
+	// This in-turn enables vertical compaction and vertical query merge.
+	AllowOverlappingBlocks bool
 }
 
 // Open returns a new storage backed by a TSDB database that is configured for Prometheus.

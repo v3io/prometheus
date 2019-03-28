@@ -16,6 +16,10 @@ limitations under the License.
 
 package logger
 
+import (
+    "context"
+)
+
 // Level defines a log level
 type Level uint8
 
@@ -45,6 +49,18 @@ type Logger interface {
     // Debug emits an unstructured debug log
     Debug(format interface{}, vars ...interface{})
 
+    // ErrorCtx emits an unstructured error log with context
+    ErrorCtx(ctx context.Context, format interface{}, vars ...interface{})
+
+    // WarnCtx emits an unstructured warning log with context
+    WarnCtx(ctx context.Context, format interface{}, vars ...interface{})
+
+    // InfoCtx emits an unstructured informational log with context
+    InfoCtx(ctx context.Context, format interface{}, vars ...interface{})
+
+    // DebugCtx emits an unstructured debug log with context
+    DebugCtx(ctx context.Context, format interface{}, vars ...interface{})
+
     // emit a structured log entry. example:
     //
     // l.InfoWith("The message",
@@ -58,11 +74,23 @@ type Logger interface {
     // WarnWith emits a structured warning log
     WarnWith(format interface{}, vars ...interface{})
 
-    // InfoWith emits a structured info loglog
+    // InfoWith emits a structured info log
     InfoWith(format interface{}, vars ...interface{})
 
     // DebugWith emits a structured debug log
     DebugWith(format interface{}, vars ...interface{})
+
+    // ErrorWithCtx emits a structured error log with context
+    ErrorWithCtx(ctx context.Context, format interface{}, vars ...interface{})
+
+    // WarnWithCtx emits a structured warning log with context
+    WarnWithCtx(ctx context.Context, format interface{}, vars ...interface{})
+
+    // InfoWithCtx emits a structured info log with context
+    InfoWithCtx(ctx context.Context, format interface{}, vars ...interface{})
+
+    // DebugWithCtx emits a structured debug log with context
+    DebugWithCtx(ctx context.Context, format interface{}, vars ...interface{})
 
     // Flush flushes buffered logs, if applicable
     Flush()
