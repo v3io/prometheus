@@ -105,7 +105,7 @@ require (
 	github.com/smartystreets/goconvey v0.0.0-20180222194500-ef6db91d284a // indirect
 	github.com/spf13/pflag v1.0.3 // indirect
 	github.com/stretchr/testify v1.2.2
-	github.com/v3io/v3io-tsdb v0.8.13
+	github.com/v3io/v3io-tsdb v0.0.0-20190328071546-6dc31df70858386cb59ed495755859f73a247554
 	golang.org/x/crypto v0.0.0-20180621125126-a49355c7e3f8 // indirect
 	golang.org/x/net v0.0.0-20180906233101-161cd47e91fd
 	golang.org/x/oauth2 v0.0.0-20180821212333-d2e6202438be
@@ -136,5 +136,3 @@ replace k8s.io/klog => github.com/simonpasquier/klog-gokit v0.1.0
 replace labix.org/v2/mgo => github.com/go-mgo/mgo v0.0.0-20180705113738-7446a0344b7872c067b3d6e1b7642571eafbae17
 
 replace launchpad.net/gocheck => github.com/go-check/check v0.0.0-20180628173108-788fd78401277ebd861206a03c884797c6ec5541
-
-replace github.com/v3io/v3io-tsdb => github.com/gtopper/v3io-tsdb v0.0.0-20181121191925-c619109fc2631f47e6512071a5805b7915e97987
