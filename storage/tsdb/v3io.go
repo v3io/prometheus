@@ -50,6 +50,26 @@ type ReadyStorage struct {
 	logger          log.Logger
 	closed          bool
 	error           error
+
+	useV3ioAggregations bool
+}
+
+func (s *ReadyStorage) SetUseV3ioAggregations(useV3ioAggregations bool) {
+	s.useV3ioAggregations = useV3ioAggregations
+	configPath := s.getConfigPath()
+	s.logger.Log("msg", "Creating v3io adapter after changing v3io aggregation indicator", "configPath", configPath, "useV3ioAggregations", useV3ioAggregations)
+
+	// create the initial v3io adapter
+	adapter, err := s.createV3ioPromAdapater(configPath)
+	if err != nil {
+		s.error = errors.Wrap(err, "failed to create v3io prometheus adapter")
+		return
+	}
+	s.v3ioPromAdapter = adapter
+}
+
+func (s *ReadyStorage) GetUseV3ioAggregations() bool {
+	return s.useV3ioAggregations
 }
 
 // Set the storage.
@@ -204,7 +224,7 @@ func (s *ReadyStorage) createV3ioPromAdapater(configPath string) (*promtsdb.V3io
 		s.logger.Log("msg", "Creating v3io adapter", "config", string(jsonLoadedConfig))
 	}
 
-	return promtsdb.NewV3ioProm(loadedConfig, nil, nil)
+	return promtsdb.NewV3ioProm(loadedConfig, nil, nil, s.useV3ioAggregations)
 }
 
 // Adapter return an adapter as storage.Storage.

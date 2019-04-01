@@ -28,7 +28,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/gate"
@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/v3io/v3io-tsdb/promtsdb"
 
 	"github.com/prometheus/prometheus/util/stats"
 )
@@ -217,6 +218,8 @@ type Engine struct {
 	timeout            time.Duration
 	gate               *gate.Gate
 	maxSamplesPerQuery int
+
+	UseV3ioAggregations bool
 }
 
 // NewEngine returns a new engine.
@@ -421,6 +424,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	}
 
 	evalSpanTimer, ctxInnerEval := query.stats.GetSpanTimer(ctx, stats.InnerEvalTime, ng.metrics.queryInnerEval)
+
 	// Instant evaluation. This is executed as a range evaluation with one step.
 	if s.Start == s.End && s.Interval == 0 {
 		start := timeMilliseconds(s.Start)
@@ -432,6 +436,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 			maxSamples:          ng.maxSamplesPerQuery,
 			defaultEvalInterval: GetDefaultEvaluationInterval(),
 			logger:              ng.logger,
+			useV3ioAggregations: ng.UseV3ioAggregations,
 		}
 		val, err := evaluator.Eval(s.Expr)
 		if err != nil {
@@ -474,6 +479,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		maxSamples:          ng.maxSamplesPerQuery,
 		defaultEvalInterval: GetDefaultEvaluationInterval(),
 		logger:              ng.logger,
+		useV3ioAggregations: ng.UseV3ioAggregations,
 	}
 	val, err := evaluator.Eval(s.Expr)
 	if err != nil {
@@ -536,7 +542,6 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 	})
 
 	mint := s.Start.Add(-maxOffset)
-
 	querier, err := q.Querier(ctx, timestamp.FromTime(mint), timestamp.FromTime(s.End))
 	if err != nil {
 		return nil, nil, err
@@ -563,6 +568,14 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 				params.End = params.End - offsetMilliseconds
 			}
 
+			switch e := s.Expr.(type) {
+			case *AggregateExpr:
+				querier.(*promtsdb.V3ioPromQuerier).UseAggregates = isV3ioEligibleQueryExpr(e)
+			}
+
+			ng.logger.Log("msg", "Querying v3io vector selector",
+				"useV3ioAggregations", querier.(*promtsdb.V3ioPromQuerier).UseAggregates,
+				"use3ioAggregationConfig", querier.(*promtsdb.V3ioPromQuerier).UseAggregatesConfig)
 			set, wrn, err = querier.Select(params, n.LabelMatchers...)
 			warnings = append(warnings, wrn...)
 			if err != nil {
@@ -582,6 +595,9 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 				params.End = params.End - offsetMilliseconds
 			}
 
+			ng.logger.Log("msg", "Querying v3io matrix selector",
+				"useV3ioAggregations", querier.(*promtsdb.V3ioPromQuerier).UseAggregates,
+				"use3ioAggregationConfig", querier.(*promtsdb.V3ioPromQuerier).UseAggregatesConfig)
 			set, wrn, err = querier.Select(params, n.LabelMatchers...)
 			warnings = append(warnings, wrn...)
 			if err != nil {
@@ -663,6 +679,8 @@ type evaluator struct {
 	currentSamples      int
 	defaultEvalInterval int64
 	logger              log.Logger
+
+	useV3ioAggregations bool
 }
 
 // errorf causes a panic with the input formatted into an error.
@@ -901,6 +919,10 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 	switch e := expr.(type) {
 	case *AggregateExpr:
+		useV3ioAggregations := isV3ioEligibleQueryExpr(e) && ev.useV3ioAggregations
+		if useV3ioAggregations {
+			return ev.emptyAggregation(e.Expr)
+		}
 		if s, ok := e.Param.(*StringLiteral); ok {
 			return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
 				return ev.aggregation(e.Op, e.Grouping, e.Without, s.Val, v[0].(Vector), enh)
@@ -1143,6 +1165,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 			maxSamples:          ev.maxSamples,
 			defaultEvalInterval: ev.defaultEvalInterval,
 			logger:              ev.logger,
+			useV3ioAggregations: ev.useV3ioAggregations,
 		}
 
 		if e.Step != 0 {
@@ -1879,6 +1902,41 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 		})
 	}
 	return enh.out
+}
+
+func (ev *evaluator) emptyAggregation(e Expr) Matrix {
+	return ev.eval(e).(Matrix)
+}
+
+func isV3ioEligibleAggregation(op ItemType) bool {
+	supportedV3ioAggregations := []ItemType{itemAvg, itemCount, itemSum, itemMin, itemMax, itemStddev, itemStdvar}
+	return containsItemType(op, supportedV3ioAggregations)
+}
+
+func isV3ioEligibleQueryExpr(e *AggregateExpr) bool {
+	if !isV3ioEligibleAggregation(e.Op) {
+		return false
+	}
+	if e.Without {
+		return false
+	}
+	// Currently only supports not nested functions.
+	// Not supported - avg(max_over_time(cpu[10m])), Supported - avg(cpu)
+	if e, ok := e.Expr.(*Call); ok {
+		if e.Func != nil {
+			return false
+		}
+	}
+	return true
+}
+
+func containsItemType(item ItemType, slice []ItemType) bool {
+	for _, curr := range slice {
+		if curr == item {
+			return true
+		}
+	}
+	return false
 }
 
 // btos returns 1 if b is true, 0 otherwise.
