@@ -15,6 +15,7 @@ package web
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -64,8 +65,10 @@ import (
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/httputil"
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
-	api_v2 "github.com/prometheus/prometheus/web/api/v2"
+	"github.com/prometheus/prometheus/web/api/v2"
 	"github.com/prometheus/prometheus/web/ui"
+
+	v3ioConfig "github.com/v3io/v3io-tsdb/pkg/config"
 )
 
 var localhostRepresentations = []string{"127.0.0.1", "localhost"}
@@ -190,6 +193,8 @@ type Options struct {
 	PageTitle                  string
 	RemoteReadSampleLimit      int
 	RemoteReadConcurrencyLimit int
+
+	V3ioConfig *v3ioConfig.V3ioConfig
 }
 
 func instrumentHandlerWithPrefix(prefix string) func(handlerName string, handler http.HandlerFunc) http.HandlerFunc {
@@ -334,10 +339,47 @@ func New(logger log.Logger, o *Options) *Handler {
 	router.Post("/debug/*subpath", serveDebug)
 
 	router.Get("/-/healthy", func(w http.ResponseWriter, r *http.Request) {
+		if o.V3ioConfig == nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "Prometheus is Unhealthy: still waiting on V3IO storage.\n")
+			return
+		}
+		schemaUrl := "http://" + path.Join(o.V3ioConfig.WebApiEndpoint, o.V3ioConfig.Container, o.V3ioConfig.TablePath, ".schema")
+		req, err := http.NewRequest("GET", schemaUrl, nil)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "Prometheus is Unhealthy: %v\n", err)
+			return
+		}
+		req.Header.Add("X-v3io-function", "GetItem")
+		req.Body = ioutil.NopCloser(strings.NewReader(`{AttibutesToGet:"__name"}`))
+		if o.V3ioConfig.AccessKey != "" {
+			req.Header.Add("X-v3io-access-key", o.V3ioConfig.AccessKey)
+		} else if o.V3ioConfig.Password != "" {
+			base64UserPassword := base64.StdEncoding.EncodeToString([]byte(o.V3ioConfig.Username + ":" + o.V3ioConfig.Password))
+			req.Header.Add("Authorization", "Basic "+base64UserPassword)
+		}
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "Prometheus is Unhealthy: %v\n", err)
+			return
+		}
+		if resp.StatusCode != http.StatusOK {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "Prometheus is Unhealthy because it could not find %s: %+v\n", schemaUrl, resp)
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, "Prometheus is Healthy.\n")
 	})
 	router.Get("/-/ready", readyf(func(w http.ResponseWriter, r *http.Request) {
+		if o.V3ioConfig == nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "Prometheus is not ready: still waiting on V3IO storage.\n")
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, "Prometheus is Ready.\n")
 	}))
