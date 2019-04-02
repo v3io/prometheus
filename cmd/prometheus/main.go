@@ -666,6 +666,10 @@ func main() {
 				startTimeMargin := int64(2 * time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)
 				localStorage.Set(db, startTimeMargin)
 				close(dbOpen)
+				cfg.web.V3ioConfig = localStorage.Config()
+				if err := localStorage.Error(); err != nil {
+					return err
+				}
 				<-cancel
 				return nil
 			},
