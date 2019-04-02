@@ -47,6 +47,7 @@ var openedLogger log.Logger
 type ReadyStorage struct {
 	mtx             sync.RWMutex
 	v3ioPromAdapter storage.Storage
+	v3ioConfig      *config.V3ioConfig
 	logger          log.Logger
 	closed          bool
 	error           error
@@ -85,12 +86,13 @@ func (s *ReadyStorage) Set(db *tsdb.DB, startTimeMargin int64) {
 	s.logger.Log("msg", "Creating initial v3io adapter", "configPath", configPath)
 
 	// create the initial v3io adapter
-	adapter, err := s.createV3ioPromAdapater(configPath)
+	adapter, v3ioConfig, err := s.createV3ioPromAdapater(configPath)
 	if err != nil {
 		s.error = errors.Wrap(err, "failed to create v3io prometheus adapter")
 		return
 	}
 	s.v3ioPromAdapter = adapter
+	s.v3ioConfig = v3ioConfig
 
 	// watch configuration file for changes
 	s.watchConfigForChanges(configPath)
@@ -110,6 +112,14 @@ func (s *ReadyStorage) Get() *tsdb.DB {
 // StartTime implements the Storage interface.
 func (s *ReadyStorage) StartTime() (int64, error) {
 	return 0, ErrNotReady
+}
+
+func (s *ReadyStorage) Error() error {
+	return s.error
+}
+
+func (s *ReadyStorage) Config() *config.V3ioConfig {
+	return s.v3ioConfig
 }
 
 // Querier implements the Storage interface.
@@ -169,7 +179,7 @@ func (s *ReadyStorage) watchConfigForChanges(configPath string) error {
 	}
 
 	// in the background, check for mtime changes and reload config
-	go func() error {
+	go func() {
 
 		for !s.closed {
 
@@ -189,7 +199,7 @@ func (s *ReadyStorage) watchConfigForChanges(configPath string) error {
 
 				s.logger.Log("msg", "Config file modification detected, recreating adapter", "configPath", configPath)
 
-				newV3ioPromAdapter, err := s.createV3ioPromAdapater(configPath)
+				newV3ioPromAdapter, _, err := s.createV3ioPromAdapater(configPath)
 				if err != nil {
 					level.Warn(s.logger).Log("msg", "Failed to create new v3io adapter", "err", err.Error())
 					continue
@@ -201,30 +211,32 @@ func (s *ReadyStorage) watchConfigForChanges(configPath string) error {
 		}
 
 		s.logger.Log("msg", "Stopping config file change watch")
-
-		return nil
 	}()
 
 	return nil
 }
 
-func (s *ReadyStorage) createV3ioPromAdapater(configPath string) (*promtsdb.V3ioPromAdapter, error) {
+func (s *ReadyStorage) createV3ioPromAdapater(configPath string) (*promtsdb.V3ioPromAdapter, *config.V3ioConfig, error) {
 	loadedConfig, err := config.GetOrLoadFromFile(configPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// if the disabled flag is set, don't create an adapter
 	if loadedConfig.Disabled {
 		s.logger.Log("msg", "Adapter is disabled, not creating")
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	if jsonLoadedConfig, err := json.Marshal(&loadedConfig); err == nil {
 		s.logger.Log("msg", "Creating v3io adapter", "config", string(jsonLoadedConfig))
 	}
 
-	return promtsdb.NewV3ioProm(loadedConfig, nil, nil, s.useV3ioAggregations)
+	adapter, err := promtsdb.NewV3ioProm(loadedConfig, nil, nil, s.useV3ioAggregations)
+	if err != nil {
+		return nil, nil, err
+	}
+	return adapter, loadedConfig, nil
 }
 
 // Adapter return an adapter as storage.Storage.
