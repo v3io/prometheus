@@ -219,7 +219,7 @@ type Engine struct {
 	gate               *gate.Gate
 	maxSamplesPerQuery int
 
-	UseV3ioAggregations bool
+	UseV3ioAggregations bool // Indicate whether or not to use v3io aggregations by default (passed from prometheus.yml)
 }
 
 // NewEngine returns a new engine.
@@ -436,7 +436,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 			maxSamples:          ng.maxSamplesPerQuery,
 			defaultEvalInterval: GetDefaultEvaluationInterval(),
 			logger:              ng.logger,
-			useV3ioAggregations: ng.UseV3ioAggregations,
+			useV3ioAggregations: querier.(*promtsdb.V3ioPromQuerier).UseV3ioAggregations(),
 		}
 		val, err := evaluator.Eval(s.Expr)
 		if err != nil {
@@ -479,7 +479,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		maxSamples:          ng.maxSamplesPerQuery,
 		defaultEvalInterval: GetDefaultEvaluationInterval(),
 		logger:              ng.logger,
-		useV3ioAggregations: ng.UseV3ioAggregations,
+		useV3ioAggregations: querier.(*promtsdb.V3ioPromQuerier).UseV3ioAggregations(),
 	}
 	val, err := evaluator.Eval(s.Expr)
 	if err != nil {
@@ -680,7 +680,7 @@ type evaluator struct {
 	defaultEvalInterval int64
 	logger              log.Logger
 
-	useV3ioAggregations bool
+	useV3ioAggregations bool // Indicates whether v3io tsdb already queried and aggregated the data, or just returned raw data
 }
 
 // errorf causes a panic with the input formatted into an error.
@@ -919,8 +919,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 	switch e := expr.(type) {
 	case *AggregateExpr:
-		useV3ioAggregations := isV3ioEligibleQueryExpr(e) && ev.useV3ioAggregations
-		if useV3ioAggregations {
+		if ev.useV3ioAggregations {
 			return ev.emptyAggregation(e.Expr)
 		}
 		if s, ok := e.Param.(*StringLiteral); ok {
