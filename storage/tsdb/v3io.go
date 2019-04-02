@@ -61,7 +61,7 @@ func (s *ReadyStorage) SetUseV3ioAggregations(useV3ioAggregations bool) {
 	s.logger.Log("msg", "Creating v3io adapter after changing v3io aggregation indicator", "configPath", configPath, "useV3ioAggregations", useV3ioAggregations)
 
 	// create the initial v3io adapter
-	adapter, err := s.createV3ioPromAdapater(configPath)
+	adapter,_, err := s.createV3ioPromAdapater(configPath)
 	if err != nil {
 		s.error = errors.Wrap(err, "failed to create v3io prometheus adapter")
 		return
