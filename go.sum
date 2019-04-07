@@ -433,8 +433,8 @@ github.com/v3io/frames v0.0.0-20190328123118-1dad1ff610509e7b087d9cd390ed1b452ca
 github.com/v3io/frames v0.0.0-20190328123118-1dad1ff610509e7b087d9cd390ed1b452caecf15/go.mod h1:6aKW4Wl4A+gQhXH0JRCVOLgwvcrLyk+fqEpemuie094=
 github.com/v3io/v3io-go-http v0.0.0-20190221115935-53e2b487c9a2 h1:NJc63wM25iS+ci5z7LVwjWD4QM0QpTQw/fovKzatss0=
 github.com/v3io/v3io-go-http v0.0.0-20190221115935-53e2b487c9a2/go.mod h1:GXYcR9MxgfbE3BJdkXki5EclvtS8Nxu2RQNLA8hMMog=
-github.com/v3io/v3io-tsdb v0.0.0-20190407141046-62f3ae0de945878e3b4045b6d2f6690c60c7bef6 h1:1ZbXymuRxY4HxFQDtASYUyPW8jTF8U1LFINr0/NLDs0=
-github.com/v3io/v3io-tsdb v0.0.0-20190407141046-62f3ae0de945878e3b4045b6d2f6690c60c7bef6/go.mod h1:u8i5a30C8GnvB3Hr97aukiKpWpe3RXceqVy8LJXcLkg=
+github.com/v3io/v3io-tsdb v0.0.0-20190407155546-9f45a2580b05d83e5ea2193c977f984fe5b4e7bf h1:ci+KdAorgObXJ/iFmmnYZfAvWpvz1uB4JnQcHGskjNA=
+github.com/v3io/v3io-tsdb v0.0.0-20190407155546-9f45a2580b05d83e5ea2193c977f984fe5b4e7bf/go.mod h1:u8i5a30C8GnvB3Hr97aukiKpWpe3RXceqVy8LJXcLkg=
 github.com/valyala/bytebufferpool v1.0.0 h1:GqA5TC/0021Y/b9FG4Oi9Mr3q7XYx6KllzawFIhcdPw=
 github.com/valyala/bytebufferpool v1.0.0/go.mod h1:6bBcMArwyJ5K/AmCkWv1jt77kVWyCJ6HpOuEn7z0Csc=
 github.com/valyala/fasthttp v1.0.0 h1:BwIoZQbBsTo3v2F5lz5Oy3TlTq4wLKTLV260EVTEWco=

@@ -300,7 +300,7 @@ github.com/v3io/frames
 github.com/v3io/frames/pb
 # github.com/v3io/v3io-go-http v0.0.0-20190221115935-53e2b487c9a2
 github.com/v3io/v3io-go-http
-# github.com/v3io/v3io-tsdb v0.8.13 => github.com/v3io/v3io-tsdb v0.0.0-20190407141046-62f3ae0de945878e3b4045b6d2f6690c60c7bef6
+# github.com/v3io/v3io-tsdb v0.8.13 => github.com/v3io/v3io-tsdb v0.0.0-20190407155546-9f45a2580b05d83e5ea2193c977f984fe5b4e7bf
 github.com/v3io/v3io-tsdb/promtsdb
 github.com/v3io/v3io-tsdb/pkg/config
 github.com/v3io/v3io-tsdb/pkg/aggregate
