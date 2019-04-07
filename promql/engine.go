@@ -572,7 +572,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 				querier.(*promtsdb.V3ioPromQuerier).UseAggregates = isV3ioEligibleQueryExpr(e)
 			}
 
-			ng.logger.Log("msg", "Querying v3io vector selector",
+			level.Debug(ng.logger).Log("msg", "Querying v3io vector selector",
 				"useV3ioAggregations", querier.(*promtsdb.V3ioPromQuerier).UseAggregates,
 				"use3ioAggregationConfig", querier.(*promtsdb.V3ioPromQuerier).UseAggregatesConfig)
 			set, wrn, err = querier.Select(params, n.LabelMatchers...)
@@ -594,7 +594,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 				params.End = params.End - offsetMilliseconds
 			}
 
-			ng.logger.Log("msg", "Querying v3io matrix selector",
+			level.Debug(ng.logger).Log("msg", "Querying v3io matrix selector",
 				"useV3ioAggregations", querier.(*promtsdb.V3ioPromQuerier).UseAggregates,
 				"use3ioAggregationConfig", querier.(*promtsdb.V3ioPromQuerier).UseAggregatesConfig)
 			set, wrn, err = querier.Select(params, n.LabelMatchers...)
@@ -1918,7 +1918,7 @@ func isV3ioEligibleQueryExpr(e *AggregateExpr) bool {
 	if e.Without {
 		return false
 	}
-	// Currently only supports not nested functions.
+	// Currently only supports non-nested functions.
 	// Not supported - avg(max_over_time(cpu[10m])), Supported - avg(cpu)
 	if e, ok := e.Expr.(*Call); ok {
 		if e.Func != nil {
