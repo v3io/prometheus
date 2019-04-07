@@ -22,9 +22,10 @@ import (
 const defaultToleranceFactor = 2
 
 type selectQueryContext struct {
-	logger    logger.Logger
-	container *v3io.Container
-	workers   int
+	logger     logger.Logger
+	container  *v3io.Container
+	workers    int
+	v3ioConfig *config.V3ioConfig
 
 	queryParams        *SelectParams
 	showAggregateLabel bool
@@ -160,7 +161,9 @@ func (queryCtx *selectQueryContext) queryPartition(partition *partmgr.DBPartitio
 				queryCtx.queryParams.Step,
 				queryCtx.queryParams.AggregationWindow,
 				partition.RollupTime(),
-				queryCtx.queryParams.Windows)
+				queryCtx.queryParams.Windows,
+				queryCtx.queryParams.disableClientAggr,
+				queryCtx.v3ioConfig.UseServerAggregateCoefficient)
 
 			if err != nil {
 				return nil, err
@@ -327,7 +330,12 @@ func (queryCtx *selectQueryContext) processQueryResults(query *partQuery) error 
 func (queryCtx *selectQueryContext) createColumnSpecs() ([]columnMeta, map[string][]columnMeta, error) {
 	var columnsSpec []columnMeta
 	columnsSpecByMetric := make(map[string][]columnMeta)
-	for i, col := range queryCtx.queryParams.getRequestedColumns() {
+	requestedColumns, err := queryCtx.queryParams.getRequestedColumns()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	for i, col := range requestedColumns {
 		_, ok := columnsSpecByMetric[col.Metric]
 		if !ok {
 			columnsSpecByMetric[col.Metric] = []columnMeta{}
