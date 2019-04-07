@@ -135,6 +135,8 @@ type Config struct {
 	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
 	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
 
+	UseV3ioAggregations bool `yaml:"useV3ioAggregations,omitempty"`
+
 	// original is the input from which the config was parsed.
 	original string
 }

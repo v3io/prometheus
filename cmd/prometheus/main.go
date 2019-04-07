@@ -445,6 +445,13 @@ func main() {
 			}
 			return ruleManager.Update(time.Duration(cfg.GlobalConfig.EvaluationInterval), files)
 		},
+		// V3io related updates
+		func(cfg *config.Config) error {
+			localStorage.SetUseV3ioAggregations(cfg.UseV3ioAggregations)
+			queryEngine.UseV3ioAggregations = cfg.UseV3ioAggregations
+
+			return nil
+		},
 	}
 
 	prometheus.MustRegister(configSuccess)
