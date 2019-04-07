@@ -179,6 +179,7 @@ func (s *ReadyStorage) watchConfigForChanges(configPath string) error {
 
 				s.logger.Log("msg", "Config file modification detected, recreating adapter", "configPath", configPath)
 
+				config.UpdateConfig(configPath)
 				newV3ioPromAdapter, _, err := s.createV3ioPromAdapater(configPath)
 				if err != nil {
 					level.Warn(s.logger).Log("msg", "Failed to create new v3io adapter", "err", err.Error())
