@@ -11,6 +11,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/v3io/v3io-go-http"
 	"github.com/v3io/v3io-tsdb/pkg/aggregate"
+	tsdbAppender "github.com/v3io/v3io-tsdb/pkg/appender"
 	"github.com/v3io/v3io-tsdb/pkg/config"
 	"github.com/v3io/v3io-tsdb/pkg/pquerier"
 	"github.com/v3io/v3io-tsdb/pkg/tsdb"
@@ -220,7 +221,7 @@ func (s *V3ioPromSeriesIterator) At() (t int64, v float64) { return s.s.At() }
 func (s *V3ioPromSeriesIterator) Err() error { return s.s.Err() }
 
 type v3ioAppender struct {
-	metricsCache *appender.MetricsCache
+	metricsCache *tsdbAppender.MetricsCache
 }
 
 func (a v3ioAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
