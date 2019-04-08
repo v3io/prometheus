@@ -36,8 +36,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/v3io/v3io-tsdb/promtsdb"
-
+	"github.com/prometheus/prometheus/storage/tsdb"
 	"github.com/prometheus/prometheus/util/stats"
 )
 
@@ -435,7 +434,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 			maxSamples:          ng.maxSamplesPerQuery,
 			defaultEvalInterval: GetDefaultEvaluationInterval(),
 			logger:              ng.logger,
-			useV3ioAggregations: querier.(*promtsdb.V3ioPromQuerier).UseV3ioAggregations(),
+			useV3ioAggregations: querier.(*tsdb.V3ioPromQuerier).UseV3ioAggregations(),
 		}
 		val, err := evaluator.Eval(s.Expr)
 		if err != nil {
@@ -478,7 +477,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		maxSamples:          ng.maxSamplesPerQuery,
 		defaultEvalInterval: GetDefaultEvaluationInterval(),
 		logger:              ng.logger,
-		useV3ioAggregations: querier.(*promtsdb.V3ioPromQuerier).UseV3ioAggregations(),
+		useV3ioAggregations: querier.(*tsdb.V3ioPromQuerier).UseV3ioAggregations(),
 	}
 	val, err := evaluator.Eval(s.Expr)
 	if err != nil {
@@ -569,12 +568,12 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 
 			switch e := s.Expr.(type) {
 			case *AggregateExpr:
-				querier.(*promtsdb.V3ioPromQuerier).UseAggregates = isV3ioEligibleQueryExpr(e)
+				querier.(*tsdb.V3ioPromQuerier).UseAggregates = isV3ioEligibleQueryExpr(e)
 			}
 
 			level.Debug(ng.logger).Log("msg", "Querying v3io vector selector",
-				"useV3ioAggregations", querier.(*promtsdb.V3ioPromQuerier).UseAggregates,
-				"use3ioAggregationConfig", querier.(*promtsdb.V3ioPromQuerier).UseAggregatesConfig)
+				"useV3ioAggregations", querier.(*tsdb.V3ioPromQuerier).UseAggregates,
+				"use3ioAggregationConfig", querier.(*tsdb.V3ioPromQuerier).UseAggregatesConfig)
 			set, wrn, err = querier.Select(params, n.LabelMatchers...)
 			warnings = append(warnings, wrn...)
 			if err != nil {
@@ -595,8 +594,8 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 			}
 
 			level.Debug(ng.logger).Log("msg", "Querying v3io matrix selector",
-				"useV3ioAggregations", querier.(*promtsdb.V3ioPromQuerier).UseAggregates,
-				"use3ioAggregationConfig", querier.(*promtsdb.V3ioPromQuerier).UseAggregatesConfig)
+				"useV3ioAggregations", querier.(*tsdb.V3ioPromQuerier).UseAggregates,
+				"use3ioAggregationConfig", querier.(*tsdb.V3ioPromQuerier).UseAggregatesConfig)
 			set, wrn, err = querier.Select(params, n.LabelMatchers...)
 			warnings = append(warnings, wrn...)
 			if err != nil {

@@ -1,4 +1,4 @@
-package promtsdb
+package tsdb
 
 import (
 	"context"
@@ -11,7 +11,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/v3io/v3io-go-http"
 	"github.com/v3io/v3io-tsdb/pkg/aggregate"
-	"github.com/v3io/v3io-tsdb/pkg/appender"
 	"github.com/v3io/v3io-tsdb/pkg/config"
 	"github.com/v3io/v3io-tsdb/pkg/pquerier"
 	"github.com/v3io/v3io-tsdb/pkg/tsdb"

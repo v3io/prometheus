@@ -19,7 +19,7 @@ package tsdb
 import (
 	"context"
 	"encoding/json"
-	"github.com/alecthomas/units"
+
 	"os"
 	"reflect"
 	"sync"
@@ -30,11 +30,11 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/tsdb"
 
+	"github.com/alecthomas/units"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/v3io/v3io-tsdb/pkg/config"
-	"github.com/v3io/v3io-tsdb/promtsdb"
 )
 
 // ErrNotReady is returned if the underlying storage is not ready yet.
@@ -216,7 +216,7 @@ func (s *ReadyStorage) watchConfigForChanges(configPath string) error {
 	return nil
 }
 
-func (s *ReadyStorage) createV3ioPromAdapater(configPath string) (*promtsdb.V3ioPromAdapter, *config.V3ioConfig, error) {
+func (s *ReadyStorage) createV3ioPromAdapater(configPath string) (*V3ioPromAdapter, *config.V3ioConfig, error) {
 	loadedConfig, err := config.GetOrLoadFromFile(configPath)
 	if err != nil {
 		return nil, nil, err
@@ -232,7 +232,7 @@ func (s *ReadyStorage) createV3ioPromAdapater(configPath string) (*promtsdb.V3io
 		s.logger.Log("msg", "Creating v3io adapter", "config", string(jsonLoadedConfig))
 	}
 
-	adapter, err := promtsdb.NewV3ioProm(loadedConfig, nil, nil)
+	adapter, err := NewV3ioProm(loadedConfig, nil, nil)
 	adapter.SetUseV3ioAggregations(s.useV3ioAggregations)
 	if err != nil {
 		return nil, nil, err
