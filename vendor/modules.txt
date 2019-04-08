@@ -294,23 +294,23 @@ github.com/shurcooL/httpfs/vfsutil
 github.com/shurcooL/vfsgen
 # github.com/stretchr/testify v1.3.0
 github.com/stretchr/testify/require
+github.com/stretchr/testify/suite
 github.com/stretchr/testify/assert
 # github.com/v3io/frames v0.0.0-20190328123118-1dad1ff610509e7b087d9cd390ed1b452caecf15 => github.com/v3io/frames v0.0.0-20190328123118-1dad1ff610509e7b087d9cd390ed1b452caecf15
 github.com/v3io/frames
 github.com/v3io/frames/pb
 # github.com/v3io/v3io-go-http v0.0.0-20190221115935-53e2b487c9a2
 github.com/v3io/v3io-go-http
-# github.com/v3io/v3io-tsdb v0.8.13 => github.com/v3io/v3io-tsdb v0.0.0-20190407170046-9c263b1c060d8cc111bcfc6daae2055da22b0e2e
-github.com/v3io/v3io-tsdb/promtsdb
-github.com/v3io/v3io-tsdb/pkg/config
+# github.com/v3io/v3io-tsdb v0.8.13 => github.com/v3io/v3io-tsdb v0.0.0-20190408164746-6763082a23aac832739fd3dc9afba20445592ee9
 github.com/v3io/v3io-tsdb/pkg/aggregate
-github.com/v3io/v3io-tsdb/pkg/appender
+github.com/v3io/v3io-tsdb/pkg/config
 github.com/v3io/v3io-tsdb/pkg/pquerier
 github.com/v3io/v3io-tsdb/pkg/tsdb
 github.com/v3io/v3io-tsdb/pkg/utils
 github.com/v3io/v3io-tsdb/internal/pkg/performance
 github.com/v3io/v3io-tsdb/pkg/chunkenc
 github.com/v3io/v3io-tsdb/pkg/partmgr
+github.com/v3io/v3io-tsdb/pkg/appender
 github.com/v3io/v3io-tsdb/pkg/querier
 github.com/v3io/v3io-tsdb/pkg/tsdb/schema
 # github.com/valyala/bytebufferpool v1.0.0
