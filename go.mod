@@ -86,7 +86,7 @@ require (
 	github.com/smartystreets/goconvey v0.0.0-20190306220146-200a235640ff // indirect
 	github.com/stretchr/testify v1.3.0
 	github.com/v3io/v3io-go-http v0.0.0-20190221115935-53e2b487c9a2
-	github.com/v3io/v3io-tsdb v0.8.13
+	github.com/v3io/v3io-tsdb v0.9.0
 	go.opencensus.io v0.19.2 // indirect
 	golang.org/x/net v0.0.0-20190311183353-d8887717615a
 	golang.org/x/oauth2 v0.0.0-20190226205417-e64efc72b421
