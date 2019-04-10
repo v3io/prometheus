@@ -86,7 +86,7 @@ func (promQuery *V3ioPromQuerier) UseV3ioAggregations() bool {
 
 // Select returns a set of series that matches the given label matchers.
 func (promQuery *V3ioPromQuerier) Select(params *storage.SelectParams, oms ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
-	name, filter, functions := match2filter(oms, promQuery.logger)
+	name, filter, function := match2filter(oms, promQuery.logger)
 	noAggr := false
 
 	// if a nil params is passed we assume it's a metadata query, so we fetch only the different labelsets withtout data.
@@ -107,22 +107,22 @@ func (promQuery *V3ioPromQuerier) Select(params *storage.SelectParams, oms ...*l
 		// TODO: support count/stdxx, require changes in Prometheus: promql/functions.go, not calc aggregate twice
 		if strings.HasSuffix(params.Func, overTimeSuffix) {
 			if promQuery.UseAggregates && promQuery.UseAggregatesConfig {
-				functions = strings.TrimSuffix(params.Func, overTimeSuffix)
+				function = strings.TrimSuffix(params.Func, overTimeSuffix)
 			} else {
 				f := params.Func[0:3]
 				if params.Step == 0 && (f == "min" || f == "max" || f == "sum" || f == "avg") {
-					functions = f
+					function = f
 				} else {
 					noAggr = true
 				}
 			}
 		} else if promQuery.UseV3ioAggregations() {
-			functions = fmt.Sprintf("%v_all", params.Func)
+			function = fmt.Sprintf("%v_all", params.Func)
 		}
 	}
 
 	selectParams := &pquerier.SelectParams{Name: name,
-		Functions:         functions,
+		Functions:         function,
 		Step:              params.Step,
 		Filter:            filter,
 		From:              promQuery.mint,
