@@ -178,7 +178,7 @@ func (d *Discovery) refresh(ctx context.Context, name string, ch chan<- []*targe
 	}
 
 	for _, record := range response.Answer {
-		target := model.LabelValue("")
+		var target model.LabelValue
 		switch addr := record.(type) {
 		case *dns.SRV:
 			// Remove the final dot from rooted DNS names to make them look more usual.
@@ -214,7 +214,7 @@ func (d *Discovery) refresh(ctx context.Context, name string, ch chan<- []*targe
 //
 // There are three possible outcomes:
 //
-// 1. One of the permutations of the given name is recognised as
+// 1. One of the permutations of the given name is recognized as
 //    "valid" by the DNS, in which case we consider ourselves "done"
 //    and that answer is returned.  Note that, due to the way the DNS
 //    handles "name has resource records, but none of the specified type",
@@ -317,7 +317,11 @@ func askServerForName(name string, queryType uint16, client *dns.Client, servAdd
 	}
 
 	response, _, err := client.Exchange(msg, servAddr)
-	if err == dns.ErrTruncated {
+	if err != nil {
+		return nil, err
+	}
+
+	if response.Truncated {
 		if client.Net == "tcp" {
 			return nil, fmt.Errorf("got truncated message on TCP (64kiB limit exceeded?)")
 		}
@@ -325,11 +329,6 @@ func askServerForName(name string, queryType uint16, client *dns.Client, servAdd
 		client.Net = "tcp"
 		return askServerForName(name, queryType, client, servAddr, false)
 	}
-	if err != nil {
-		return nil, err
-	}
-	if msg.Id != response.Id {
-		return nil, fmt.Errorf("DNS ID mismatch, request: %d, response: %d", msg.Id, response.Id)
-	}
+
 	return response, nil
 }

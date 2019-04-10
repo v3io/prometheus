@@ -43,24 +43,18 @@ var (
 	addressLabel = model.MetaLabelPrefix + "consul_address"
 	// nodeLabel is the name for the label containing a target's node name.
 	nodeLabel = model.MetaLabelPrefix + "consul_node"
-	// metaDataLabel is the prefix for the labels mapping to a target's metadata.
-	metaDataLabel = model.MetaLabelPrefix + "consul_metadata_"
 	// tagsLabel is the name of the label containing the tags assigned to the target.
 	tagsLabel = model.MetaLabelPrefix + "consul_tags"
-	// serviceLabel is the name of the label containing the service name.
-	serviceLabel = model.MetaLabelPrefix + "consul_service"
 	// serviceAddressLabel is the name of the label containing the (optional) service address.
 	serviceAddressLabel = model.MetaLabelPrefix + "consul_service_address"
 	//servicePortLabel is the name of the label containing the service port.
 	servicePortLabel = model.MetaLabelPrefix + "consul_service_port"
-	// datacenterLabel is the name of the label containing the datacenter ID.
-	datacenterLabel = model.MetaLabelPrefix + "consul_dc"
 	// serviceIDLabel is the name of the label containing the service ID.
 	serviceIDLabel = model.MetaLabelPrefix + "consul_service_id"
 )
 
 // CatalogService is copied from https://github.com/hashicorp/consul/blob/master/api/catalog.go
-// this struct respresents the response from a /service/<service-name> request.
+// this struct represents the response from a /service/<service-name> request.
 // Consul License: https://github.com/hashicorp/consul/blob/master/LICENSE
 type CatalogService struct {
 	ID                       string
@@ -89,11 +83,11 @@ type sdConfig struct {
 // Note: This is the struct with your implementation of the Discoverer interface (see Run function).
 // Discovery retrieves target information from a Consul server and updates them via watches.
 type discovery struct {
-	address          string
-	refreshInterval  int
-	clientDatacenter string
-	tagSeparator     string
-	logger           log.Logger
+	address         string
+	refreshInterval int
+	tagSeparator    string
+	logger          log.Logger
+	oldSourceList   map[string]bool
 }
 
 func (d *discovery) parseServiceNodes(resp *http.Response, name string) (*targetgroup.Group, error) {
@@ -175,11 +169,13 @@ func (d *discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		}
 
 		var tgs []*targetgroup.Group
-		// Note that we treat errors when querying specific consul services as fatal for for this
+		// Note that we treat errors when querying specific consul services as fatal for this
 		// iteration of the time.Tick loop. It's better to have some stale targets than an incomplete
 		// list of targets simply because there may have been a timeout. If the service is actually
 		// gone as far as consul is concerned, that will be picked up during the next iteration of
 		// the outer loop.
+
+		newSourceList := make(map[string]bool)
 		for name := range srvs {
 			if name == "consul" {
 				continue
@@ -195,7 +191,17 @@ func (d *discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				break
 			}
 			tgs = append(tgs, tg)
+			newSourceList[tg.Source] = true
 		}
+		// When targetGroup disappear, send an update with empty targetList.
+		for key := range d.oldSourceList {
+			if !newSourceList[key] {
+				tgs = append(tgs, &targetgroup.Group{
+					Source: key,
+				})
+			}
+		}
+		d.oldSourceList = newSourceList
 		if err == nil {
 			// We're returning all Consul services as a single targetgroup.
 			ch <- tgs
@@ -216,6 +222,7 @@ func newDiscovery(conf sdConfig) (*discovery, error) {
 		refreshInterval: conf.RefreshInterval,
 		tagSeparator:    conf.TagSeparator,
 		logger:          logger,
+		oldSourceList:   make(map[string]bool),
 	}
 	return cd, nil
 }
