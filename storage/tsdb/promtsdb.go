@@ -105,11 +105,15 @@ func (promQuery *V3ioPromQuerier) Select(params *storage.SelectParams, oms ...*l
 		// only pass xx_over_time functions (just the xx part)
 		// TODO: support count/stdxx, require changes in Prometheus: promql/functions.go, not calc aggregate twice
 		if strings.HasSuffix(params.Func, "_over_time") {
-			f := params.Func[0:3]
-			if params.Step == 0 && (f == "min" || f == "max" || f == "sum" || f == "avg") {
-				functions = f
+			if promQuery.UseAggregates && promQuery.UseAggregatesConfig {
+				functions = params.Func[0:3]
 			} else {
-				noAggr = true
+				f := params.Func[0:3]
+				if params.Step == 0 && (f == "min" || f == "max" || f == "sum" || f == "avg") {
+					functions = f
+				} else {
+					noAggr = true
+				}
 			}
 		} else if promQuery.UseV3ioAggregations() {
 			functions = fmt.Sprintf("%v_all", params.Func)
@@ -117,11 +121,12 @@ func (promQuery *V3ioPromQuerier) Select(params *storage.SelectParams, oms ...*l
 	}
 
 	selectParams := &pquerier.SelectParams{Name: name,
-		Functions: functions,
-		Step:      params.Step,
-		Filter:    filter,
-		From:      promQuery.mint,
-		To:        promQuery.maxt}
+		Functions:         functions,
+		Step:              params.Step,
+		Filter:            filter,
+		From:              promQuery.mint,
+		To:                promQuery.maxt,
+		AggregationWindow: params.AggregationWindow}
 
 	set, err := promQuery.v3ioQuerier.SelectProm(selectParams, noAggr)
 	return &V3ioPromSeriesSet{s: set}, nil, err

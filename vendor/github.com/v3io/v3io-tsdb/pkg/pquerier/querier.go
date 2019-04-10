@@ -107,8 +107,7 @@ func (s *SelectParams) validateSelectParams() error {
 }
 
 func (q *V3ioQuerier) SelectProm(params *SelectParams, noAggr bool) (utils.SeriesSet, error) {
-
-	params.disableClientAggr = true
+	params.disableClientAggr = false
 	params.disableAllAggr = noAggr
 	iter, err := q.baseSelectQry(params, false)
 	if err != nil || iter == nil {
