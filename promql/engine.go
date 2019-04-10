@@ -559,7 +559,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 			Step:  durationToInt64Millis(s.Interval),
 		}
 
-		querier.(*promtsdb.V3ioPromQuerier).UseAggregates = isV3ioEligibleQueryExpr(s.Expr)
+		querier.(*tsdb.V3ioPromQuerier).UseAggregates = isV3ioEligibleQueryExpr(s.Expr)
 
 		switch n := node.(type) {
 		case *VectorSelector:
