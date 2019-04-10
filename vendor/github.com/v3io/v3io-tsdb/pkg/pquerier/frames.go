@@ -609,6 +609,7 @@ func (c *basicColumn) SetDataAt(i int, value interface{}) error {
 	}
 	return nil
 }
+
 func (c *basicColumn) SetData(d interface{}, size int) error {
 	return errors.New("method not supported")
 }
