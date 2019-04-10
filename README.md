@@ -91,6 +91,10 @@ The Makefile provides several targets:
   * You will find a Travis CI configuration in `.travis.yml`.
   * See the [Community page](https://prometheus.io/community) for how to reach the Prometheus developers and users on various communication channels.
 
+## V3IO integration
+### Configuration Options
+  * `disableV3ioAggregations` - Prometheus uses v3io-tsdb builtin aggregations by default when possible. To disable this optimization set `disableV3ioAggregations: true` config in your `prometheus.yaml` file. 
+
 ## Contributing
 
 Refer to [CONTRIBUTING.md](https://github.com/prometheus/prometheus/blob/master/CONTRIBUTING.md)
