@@ -100,13 +100,14 @@ func (promQuery *V3ioPromQuerier) Select(params *storage.SelectParams, oms ...*l
 	}
 
 	promQuery.logger.Debug("SelectParams: %+v", params)
+	overTimeSuffix := "_over_time"
 
 	if params.Func != "" {
 		// only pass xx_over_time functions (just the xx part)
 		// TODO: support count/stdxx, require changes in Prometheus: promql/functions.go, not calc aggregate twice
-		if strings.HasSuffix(params.Func, "_over_time") {
+		if strings.HasSuffix(params.Func, overTimeSuffix) {
 			if promQuery.UseAggregates && promQuery.UseAggregatesConfig {
-				functions = params.Func[0:3]
+				functions = strings.TrimSuffix(params.Func, overTimeSuffix)
 			} else {
 				f := params.Func[0:3]
 				if params.Step == 0 && (f == "min" || f == "max" || f == "sum" || f == "avg") {

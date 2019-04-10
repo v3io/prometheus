@@ -60,6 +60,21 @@ var (
 	// DefaultEvaluationInterval is the default evaluation interval of
 	// a subquery in milliseconds.
 	DefaultEvaluationInterval int64
+
+	supportedV3ioFunctions = map[string]bool{"max_over_time": true,
+		"min_over_time":    true,
+		"avg_over_time":    true,
+		"sum_over_time":    true,
+		"count_over_time":  true,
+		"stddev_over_time": true,
+		"stdvar_over_time": true}
+	supportedV3ioAggregations = map[ItemType]bool{itemAvg: true,
+		itemCount:  true,
+		itemSum:    true,
+		itemMin:    true,
+		itemMax:    true,
+		itemStddev: true,
+		itemStdvar: true}
 )
 
 // SetDefaultEvaluationInterval sets DefaultEvaluationInterval.
@@ -1912,24 +1927,11 @@ func (ev *evaluator) emptyAggregation(e Expr) Matrix {
 }
 
 func isV3ioEligibleAggregation(op ItemType) bool {
-	supportedV3ioAggregations := []ItemType{itemAvg, itemCount, itemSum, itemMin, itemMax, itemStddev, itemStdvar}
-	return containsItemType(op, supportedV3ioAggregations)
+	return supportedV3ioAggregations[op]
 }
 
 func isV3ioEligibleFunction(function string) bool {
-	supportedV3ioAggregations := []string{"max_over_time",
-		"min_over_time",
-		"avg_over_time",
-		"sum_over_time",
-		"count_over_time",
-		"stddev_over_time",
-		"stdvar_over_time"}
-	for _, s := range supportedV3ioAggregations {
-		if s == function {
-			return true
-		}
-	}
-	return false
+	return supportedV3ioFunctions[function]
 }
 
 func isV3ioEligibleQueryExpr(e Expr) bool {
@@ -1953,15 +1955,6 @@ func isV3ioEligibleQueryExpr(e Expr) bool {
 		return isV3ioEligibleFunction(expr.Func.Name)
 	}
 
-	return false
-}
-
-func containsItemType(item ItemType, slice []ItemType) bool {
-	for _, curr := range slice {
-		if curr == item {
-			return true
-		}
-	}
 	return false
 }
 
