@@ -1917,7 +1917,13 @@ func isV3ioEligibleAggregation(op ItemType) bool {
 }
 
 func isV3ioEligibleFunction(function string) bool {
-	supportedV3ioAggregations := []string{"max_over_time", "min_over_time", "avg_over_time", "sum_over_time", "count_over_time"}
+	supportedV3ioAggregations := []string{"max_over_time",
+		"min_over_time",
+		"avg_over_time",
+		"sum_over_time",
+		"count_over_time",
+		"stddev_over_time",
+		"stdvar_over_time"}
 	for _, s := range supportedV3ioAggregations {
 		if s == function {
 			return true
