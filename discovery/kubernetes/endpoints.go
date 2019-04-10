@@ -150,7 +150,7 @@ func (e *Endpoints) process(ctx context.Context, ch chan<- []*targetgroup.Group)
 
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		level.Error(e.logger).Log("msg", "spliting key failed", "key", key)
+		level.Error(e.logger).Log("msg", "splitting key failed", "key", key)
 		return true
 	}
 
@@ -178,7 +178,7 @@ func convertToEndpoints(o interface{}) (*apiv1.Endpoints, error) {
 		return endpoints, nil
 	}
 
-	return nil, fmt.Errorf("Received unexpected object: %v", o)
+	return nil, fmt.Errorf("received unexpected object: %v", o)
 }
 
 func endpointsSource(ep *apiv1.Endpoints) string {

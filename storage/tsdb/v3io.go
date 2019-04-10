@@ -28,11 +28,11 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/tsdb"
 
+	"github.com/alecthomas/units"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/v3io/v3io-tsdb/pkg/config"
-	"github.com/v3io/v3io-tsdb/promtsdb"
 )
 
 // ErrNotReady is returned if the underlying storage is not ready yet.
@@ -45,9 +45,30 @@ var openedLogger log.Logger
 type ReadyStorage struct {
 	mtx             sync.RWMutex
 	v3ioPromAdapter storage.Storage
+	v3ioConfig      *config.V3ioConfig
 	logger          log.Logger
 	closed          bool
 	error           error
+
+	useV3ioAggregations bool
+}
+
+func (s *ReadyStorage) SetUseV3ioAggregations(useV3ioAggregations bool) {
+	s.useV3ioAggregations = useV3ioAggregations
+	configPath := s.getConfigPath()
+	s.logger.Log("msg", "Creating v3io adapter after changing v3io aggregation indicator", "configPath", configPath, "useV3ioAggregations", useV3ioAggregations)
+
+	// create the initial v3io adapter
+	adapter, _, err := s.createV3ioPromAdapater(configPath)
+	if err != nil {
+		s.error = errors.Wrap(err, "failed to create v3io prometheus adapter")
+		return
+	}
+	s.v3ioPromAdapter = adapter
+}
+
+func (s *ReadyStorage) GetUseV3ioAggregations() bool {
+	return s.useV3ioAggregations
 }
 
 // Set the storage.
@@ -63,12 +84,13 @@ func (s *ReadyStorage) Set(db *tsdb.DB, startTimeMargin int64) {
 	s.logger.Log("msg", "Creating initial v3io adapter", "configPath", configPath)
 
 	// create the initial v3io adapter
-	adapter, err := s.createV3ioPromAdapater(configPath)
+	adapter, v3ioConfig, err := s.createV3ioPromAdapater(configPath)
 	if err != nil {
 		s.error = errors.Wrap(err, "failed to create v3io prometheus adapter")
 		return
 	}
 	s.v3ioPromAdapter = adapter
+	s.v3ioConfig = v3ioConfig
 
 	// watch configuration file for changes
 	s.watchConfigForChanges(configPath)
@@ -88,6 +110,14 @@ func (s *ReadyStorage) Get() *tsdb.DB {
 // StartTime implements the Storage interface.
 func (s *ReadyStorage) StartTime() (int64, error) {
 	return 0, ErrNotReady
+}
+
+func (s *ReadyStorage) Error() error {
+	return s.error
+}
+
+func (s *ReadyStorage) Config() *config.V3ioConfig {
+	return s.v3ioConfig
 }
 
 // Querier implements the Storage interface.
@@ -147,7 +177,7 @@ func (s *ReadyStorage) watchConfigForChanges(configPath string) error {
 	}
 
 	// in the background, check for mtime changes and reload config
-	go func() error {
+	go func() {
 
 		for !s.closed {
 
@@ -167,7 +197,8 @@ func (s *ReadyStorage) watchConfigForChanges(configPath string) error {
 
 				s.logger.Log("msg", "Config file modification detected, recreating adapter", "configPath", configPath)
 
-				newV3ioPromAdapter, err := s.createV3ioPromAdapater(configPath)
+				config.UpdateConfig(configPath)
+				newV3ioPromAdapter, _, err := s.createV3ioPromAdapater(configPath)
 				if err != nil {
 					level.Warn(s.logger).Log("msg", "Failed to create new v3io adapter", "err", err.Error())
 					continue
@@ -179,28 +210,31 @@ func (s *ReadyStorage) watchConfigForChanges(configPath string) error {
 		}
 
 		s.logger.Log("msg", "Stopping config file change watch")
-
-		return nil
 	}()
 
 	return nil
 }
 
-func (s *ReadyStorage) createV3ioPromAdapater(configPath string) (*promtsdb.V3ioPromAdapter, error) {
+func (s *ReadyStorage) createV3ioPromAdapater(configPath string) (*V3ioPromAdapter, *config.V3ioConfig, error) {
 	loadedConfig, err := config.GetOrLoadFromFile(configPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// if the disabled flag is set, don't create an adapter
 	if loadedConfig.Disabled {
 		s.logger.Log("msg", "Adapter is disabled, not creating")
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	s.logger.Log("msg", "Creating v3io adapter", "config", loadedConfig.String())
 
-	return promtsdb.NewV3ioProm(loadedConfig, nil, nil)
+	adapter, err := NewV3ioProm(loadedConfig, nil, nil)
+	adapter.SetUseV3ioAggregations(s.useV3ioAggregations)
+	if err != nil {
+		return nil, nil, err
+	}
+	return adapter, loadedConfig, nil
 }
 
 // Adapter return an adapter as storage.Storage.
@@ -210,9 +244,6 @@ func Adapter(db *tsdb.DB, startTimeMargin int64) storage.Storage {
 
 // Options of the DB storage.
 type Options struct {
-	// The interval at which the write ahead log is flushed to disc.
-	WALFlushInterval time.Duration
-
 	// The timestamp range of head blocks after which they get persisted.
 	// It's the minimum duration of any persisted block.
 	MinBlockDuration model.Duration
@@ -220,11 +251,21 @@ type Options struct {
 	// The maximum timestamp range of compacted blocks.
 	MaxBlockDuration model.Duration
 
+	// The maximum size of each WAL segment file.
+	WALSegmentSize units.Base2Bytes
+
 	// Duration for how long to retain data.
-	Retention model.Duration
+	RetentionDuration model.Duration
+
+	// Maximum number of bytes to be retained.
+	MaxBytes units.Base2Bytes
 
 	// Disable creation and consideration of lockfile.
 	NoLockfile bool
+
+	// When true it disables the overlapping blocks check.
+	// This in-turn enables vertical compaction and vertical query merge.
+	AllowOverlappingBlocks bool
 }
 
 // Open returns a new storage backed by a TSDB database that is configured for Prometheus.

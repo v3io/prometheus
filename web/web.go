@@ -15,6 +15,7 @@ package web
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,6 +29,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -50,12 +52,12 @@ import (
 	"github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
+	prometheus_tsdb "github.com/prometheus/prometheus/storage/tsdb"
 	"github.com/prometheus/tsdb"
 	"golang.org/x/net/netutil"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
-	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
@@ -63,11 +65,32 @@ import (
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/httputil"
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
-	api_v2 "github.com/prometheus/prometheus/web/api/v2"
+	"github.com/prometheus/prometheus/web/api/v2"
 	"github.com/prometheus/prometheus/web/ui"
+
+	v3ioConfig "github.com/v3io/v3io-tsdb/pkg/config"
 )
 
 var localhostRepresentations = []string{"127.0.0.1", "localhost"}
+
+// withStackTrace logs the stack trace in case the request panics. The function
+// will re-raise the error which will then be handled by the net/http package.
+// It is needed because the go-kit log package doesn't manage properly the
+// panics from net/http (see https://github.com/go-kit/kit/issues/233).
+func withStackTracer(h http.Handler, l log.Logger) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				const size = 64 << 10
+				buf := make([]byte, size)
+				buf = buf[:runtime.Stack(buf, false)]
+				level.Error(l).Log("msg", "panic while serving request", "client", r.RemoteAddr, "url", r.URL, "err", err, "stack", buf)
+				panic(err)
+			}
+		}()
+		h.ServeHTTP(w, r)
+	})
+}
 
 var (
 	requestDuration = prometheus.NewHistogramVec(
@@ -106,20 +129,18 @@ type Handler struct {
 
 	apiV1 *api_v1.API
 
-	router       *route.Router
-	quitCh       chan struct{}
-	reloadCh     chan chan error
-	options      *Options
-	config       *config.Config
-	configString string
-	versionInfo  *PrometheusVersion
-	birth        time.Time
-	cwd          string
-	flagsMap     map[string]string
+	router      *route.Router
+	quitCh      chan struct{}
+	reloadCh    chan chan error
+	options     *Options
+	config      *config.Config
+	versionInfo *PrometheusVersion
+	birth       time.Time
+	cwd         string
+	flagsMap    map[string]string
 
-	externalLabels model.LabelSet
-	mtx            sync.RWMutex
-	now            func() model.Time
+	mtx sync.RWMutex
+	now func() model.Time
 
 	ready uint32 // ready is uint32 rather than boolean to be able to use atomic functions.
 }
@@ -148,6 +169,7 @@ type PrometheusVersion struct {
 type Options struct {
 	Context       context.Context
 	TSDB          func() *tsdb.DB
+	TSDBCfg       prometheus_tsdb.Options
 	Storage       storage.Storage
 	QueryEngine   *promql.Engine
 	ScrapeManager *scrape.Manager
@@ -156,18 +178,29 @@ type Options struct {
 	Version       *PrometheusVersion
 	Flags         map[string]string
 
-	ListenAddress        string
-	ReadTimeout          time.Duration
-	MaxConnections       int
-	ExternalURL          *url.URL
-	RoutePrefix          string
-	UseLocalAssets       bool
-	UserAssetsPath       string
-	ConsoleTemplatesPath string
-	ConsoleLibrariesPath string
-	EnableLifecycle      bool
-	EnableAdminAPI       bool
-	RemoteReadLimit      int
+	ListenAddress              string
+	CORSOrigin                 *regexp.Regexp
+	ReadTimeout                time.Duration
+	MaxConnections             int
+	ExternalURL                *url.URL
+	RoutePrefix                string
+	UseLocalAssets             bool
+	UserAssetsPath             string
+	ConsoleTemplatesPath       string
+	ConsoleLibrariesPath       string
+	EnableLifecycle            bool
+	EnableAdminAPI             bool
+	PageTitle                  string
+	RemoteReadSampleLimit      int
+	RemoteReadConcurrencyLimit int
+
+	V3ioConfig *v3ioConfig.V3ioConfig
+}
+
+func instrumentHandlerWithPrefix(prefix string) func(handlerName string, handler http.HandlerFunc) http.HandlerFunc {
+	return func(handlerName string, handler http.HandlerFunc) http.HandlerFunc {
+		return instrumentHandler(prefix+handlerName, handler)
+	}
 }
 
 func instrumentHandler(handlerName string, handler http.HandlerFunc) http.HandlerFunc {
@@ -224,11 +257,18 @@ func New(logger log.Logger, o *Options) *Handler {
 		},
 		o.Flags,
 		h.testReady,
-		h.options.TSDB,
+		func() api_v1.TSDBAdmin {
+			if db := h.options.TSDB(); db != nil {
+				return db
+			}
+			return nil
+		},
 		h.options.EnableAdminAPI,
 		logger,
 		h.ruleManager,
-		h.options.RemoteReadLimit,
+		h.options.RemoteReadSampleLimit,
+		h.options.RemoteReadConcurrencyLimit,
+		h.options.CORSOrigin,
 	)
 
 	if o.RoutePrefix != "/" {
@@ -299,29 +339,52 @@ func New(logger log.Logger, o *Options) *Handler {
 	router.Post("/debug/*subpath", serveDebug)
 
 	router.Get("/-/healthy", func(w http.ResponseWriter, r *http.Request) {
+		if o.V3ioConfig == nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "Prometheus is Unhealthy: still waiting on V3IO storage.\n")
+			return
+		}
+		schemaUrl := "http://" + path.Join(o.V3ioConfig.WebApiEndpoint, o.V3ioConfig.Container, o.V3ioConfig.TablePath, ".schema")
+		req, err := http.NewRequest("GET", schemaUrl, nil)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "Prometheus is Unhealthy: %v\n", err)
+			return
+		}
+		req.Header.Add("X-v3io-function", "GetItem")
+		req.Body = ioutil.NopCloser(strings.NewReader(`{AttibutesToGet:"__name"}`))
+		if o.V3ioConfig.AccessKey != "" {
+			req.Header.Add("X-v3io-access-key", o.V3ioConfig.AccessKey)
+		} else if o.V3ioConfig.Password != "" {
+			base64UserPassword := base64.StdEncoding.EncodeToString([]byte(o.V3ioConfig.Username + ":" + o.V3ioConfig.Password))
+			req.Header.Add("Authorization", "Basic "+base64UserPassword)
+		}
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "Prometheus is Unhealthy: %v\n", err)
+			return
+		}
+		if resp.StatusCode != http.StatusOK {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "Prometheus is Unhealthy because it could not find %s: %+v\n", schemaUrl, resp)
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, "Prometheus is Healthy.\n")
 	})
 	router.Get("/-/ready", readyf(func(w http.ResponseWriter, r *http.Request) {
+		if o.V3ioConfig == nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "Prometheus is not ready: still waiting on V3IO storage.\n")
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, "Prometheus is Ready.\n")
 	}))
 
 	return h
-}
-
-var corsHeaders = map[string]string{
-	"Access-Control-Allow-Headers":  "Accept, Authorization, Content-Type, Origin",
-	"Access-Control-Allow-Methods":  "GET, OPTIONS",
-	"Access-Control-Allow-Origin":   "*",
-	"Access-Control-Expose-Headers": "Date",
-}
-
-// Enables cross-site script calls.
-func setCORS(w http.ResponseWriter) {
-	for h, v := range corsHeaders {
-		w.Header().Set(h, v)
-	}
 }
 
 func serveDebug(w http.ResponseWriter, req *http.Request) {
@@ -419,7 +482,7 @@ func (h *Handler) Run(ctx context.Context) error {
 	)
 	av2.RegisterGRPC(grpcSrv)
 
-	hh, err := av2.HTTPHandler(h.options.ListenAddress)
+	hh, err := av2.HTTPHandler(ctx, h.options.ListenAddress)
 	if err != nil {
 		return err
 	}
@@ -432,7 +495,7 @@ func (h *Handler) Run(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.Handle("/", h.router)
 
-	av1 := route.New().WithInstrumentation(instrumentHandler)
+	av1 := route.New().WithInstrumentation(instrumentHandlerWithPrefix("/api/v1"))
 	h.apiV1.Register(av1)
 	apiPath := "/api"
 	if h.options.RoutePrefix != "/" {
@@ -444,7 +507,7 @@ func (h *Handler) Run(ctx context.Context) error {
 
 	mux.Handle(apiPath+"/", http.StripPrefix(apiPath,
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			setCORS(w)
+			httputil.SetCORS(w, h.options.CORSOrigin, r)
 			hhFunc(w, r)
 		}),
 	))
@@ -452,7 +515,7 @@ func (h *Handler) Run(ctx context.Context) error {
 	errlog := stdlog.New(log.NewStdlibAdapter(level.Error(h.logger)), "", 0)
 
 	httpSrv := &http.Server{
-		Handler:     nethttp.Middleware(opentracing.GlobalTracer(), mux, operationName),
+		Handler:     withStackTracer(nethttp.Middleware(opentracing.GlobalTracer(), mux, operationName), h.logger),
 		ErrorLog:    errlog,
 		ReadTimeout: h.options.ReadTimeout,
 	}
@@ -503,6 +566,7 @@ func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+	defer file.Close()
 	text, err := ioutil.ReadAll(file)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -570,6 +634,7 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		TimeSeriesCount     int64
 		LastConfigTime      time.Time
 		ReloadConfigSuccess bool
+		StorageRetention    string
 	}{
 		Birth:          h.birth,
 		CWD:            h.cwd,
@@ -579,6 +644,17 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		GOMAXPROCS:     runtime.GOMAXPROCS(0),
 		GOGC:           os.Getenv("GOGC"),
 	}
+
+	if h.options.TSDBCfg.RetentionDuration != 0 {
+		status.StorageRetention = h.options.TSDBCfg.RetentionDuration.String()
+	}
+	if h.options.TSDBCfg.MaxBytes != 0 {
+		if status.StorageRetention != "" {
+			status.StorageRetention = status.StorageRetention + " or "
+		}
+		status.StorageRetention = status.StorageRetention + h.options.TSDBCfg.MaxBytes.String()
+	}
+
 	metrics, err := prometheus.DefaultGatherer.Gather()
 	if err != nil {
 		http.Error(w, fmt.Sprintf("error gathering runtime status: %s", err), http.StatusInternalServerError)
@@ -672,16 +748,15 @@ func (h *Handler) serviceDiscovery(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) targets(w http.ResponseWriter, r *http.Request) {
-	// Bucket targets by job label
-	tps := map[string][]*scrape.Target{}
-	for _, t := range h.scrapeManager.TargetsActive() {
-		job := t.Labels().Get(model.JobLabel)
-		tps[job] = append(tps[job], t)
-	}
-
+	tps := h.scrapeManager.TargetsActive()
 	for _, targets := range tps {
 		sort.Slice(targets, func(i, j int) bool {
-			return targets[i].Labels().Get(labels.InstanceName) < targets[j].Labels().Get(labels.InstanceName)
+			iJobLabel := targets[i].Labels().Get(model.JobLabel)
+			jJobLabel := targets[j].Labels().Get(model.JobLabel)
+			if iJobLabel == jJobLabel {
+				return targets[i].Labels().Get(model.InstanceLabel) < targets[j].Labels().Get(model.InstanceLabel)
+			}
+			return iJobLabel < jJobLabel
 		})
 	}
 
@@ -731,6 +806,7 @@ func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 		},
 		"consolesPath": func() string { return consolesPath },
 		"pathPrefix":   func() string { return opts.ExternalURL.Path },
+		"pageTitle":    func() string { return opts.PageTitle },
 		"buildVersion": func() string { return opts.Version.Revision },
 		"stripLabels": func(lset map[string]string, labels ...string) map[string]string {
 			for _, ln := range labels {
