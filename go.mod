@@ -116,4 +116,4 @@ replace launchpad.net/gocheck => github.com/go-check/check v0.0.0-20180628173108
 
 replace github.com/v3io/frames => github.com/v3io/frames v0.0.0-20190328123118-1dad1ff610509e7b087d9cd390ed1b452caecf15
 
-replace github.com/v3io/v3io-tsdb => github.com/v3io/v3io-tsdb v0.0.0-20190408164746-6763082a23aac832739fd3dc9afba20445592ee9
+replace github.com/v3io/v3io-tsdb => github.com/v3io/v3io-tsdb v0.9.0
