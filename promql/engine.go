@@ -60,6 +60,21 @@ var (
 	// DefaultEvaluationInterval is the default evaluation interval of
 	// a subquery in milliseconds.
 	DefaultEvaluationInterval int64
+
+	supportedV3ioFunctions = map[string]bool{"max_over_time": true,
+		"min_over_time":    true,
+		"avg_over_time":    true,
+		"sum_over_time":    true,
+		"count_over_time":  true,
+		"stddev_over_time": true,
+		"stdvar_over_time": true}
+	supportedV3ioAggregations = map[ItemType]bool{itemAvg: true,
+		itemCount:  true,
+		itemSum:    true,
+		itemMin:    true,
+		itemMax:    true,
+		itemStddev: true,
+		itemStdvar: true}
 )
 
 // SetDefaultEvaluationInterval sets DefaultEvaluationInterval.
@@ -518,6 +533,8 @@ func (ng *Engine) cumulativeSubqueryOffset(path []Node) time.Duration {
 
 func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *EvalStmt) (storage.Querier, storage.Warnings, error) {
 	var maxOffset time.Duration
+	var aggregationWindow int64
+
 	Inspect(s.Expr, func(node Node, path []Node) error {
 		subqOffset := ng.cumulativeSubqueryOffset(path)
 		switch n := node.(type) {
@@ -529,6 +546,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 				maxOffset = n.Offset + LookbackDelta + subqOffset
 			}
 		case *MatrixSelector:
+			aggregationWindow = n.Range.Nanoseconds() / 1000000
 			if maxOffset < n.Range+subqOffset {
 				maxOffset = n.Range + subqOffset
 			}
@@ -556,19 +574,17 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 			Step:  durationToInt64Millis(s.Interval),
 		}
 
+		querier.(*tsdb.V3ioPromQuerier).UseAggregates = isV3ioEligibleQueryExpr(s.Expr)
+
 		switch n := node.(type) {
 		case *VectorSelector:
 			params.Start = params.Start - durationMilliseconds(LookbackDelta)
 			params.Func = extractFuncFromPath(path)
+			params.AggregationWindow = aggregationWindow
 			if n.Offset > 0 {
 				offsetMilliseconds := durationMilliseconds(n.Offset)
 				params.Start = params.Start - offsetMilliseconds
 				params.End = params.End - offsetMilliseconds
-			}
-
-			switch e := s.Expr.(type) {
-			case *AggregateExpr:
-				querier.(*tsdb.V3ioPromQuerier).UseAggregates = isV3ioEligibleQueryExpr(e)
 			}
 
 			level.Debug(ng.logger).Log("msg", "Querying v3io vector selector",
@@ -587,6 +603,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 			// For all matrix queries we want to ensure that we have (end-start) + range selected
 			// this way we have `range` data before the start time
 			params.Start = params.Start - durationMilliseconds(n.Range)
+			params.AggregationWindow = aggregationWindow
 			if n.Offset > 0 {
 				offsetMilliseconds := durationMilliseconds(n.Offset)
 				params.Start = params.Start - offsetMilliseconds
@@ -977,6 +994,10 @@ func (ev *evaluator) eval(expr Expr) Value {
 		otherInArgs := make([]Vector, len(e.Args))
 		for i, e := range e.Args {
 			if i != matrixArgIndex {
+				if ev.useV3ioAggregations {
+					return ev.emptyAggregation(e)
+				}
+
 				otherArgs[i] = ev.eval(e).(Matrix)
 				otherInArgs[i] = Vector{Sample{}}
 				inArgs[i] = otherInArgs[i]
@@ -1906,33 +1927,34 @@ func (ev *evaluator) emptyAggregation(e Expr) Matrix {
 }
 
 func isV3ioEligibleAggregation(op ItemType) bool {
-	supportedV3ioAggregations := []ItemType{itemAvg, itemCount, itemSum, itemMin, itemMax, itemStddev, itemStdvar}
-	return containsItemType(op, supportedV3ioAggregations)
+	return supportedV3ioAggregations[op]
 }
 
-func isV3ioEligibleQueryExpr(e *AggregateExpr) bool {
-	if !isV3ioEligibleAggregation(e.Op) {
-		return false
-	}
-	if e.Without {
-		return false
-	}
-	// Currently only supports non-nested functions.
-	// Not supported - avg(max_over_time(cpu[10m])), Supported - avg(cpu)
-	if e, ok := e.Expr.(*Call); ok {
-		if e.Func != nil {
+func isV3ioEligibleFunction(function string) bool {
+	return supportedV3ioFunctions[function]
+}
+
+func isV3ioEligibleQueryExpr(e Expr) bool {
+	switch expr := e.(type) {
+	case *AggregateExpr:
+		if !isV3ioEligibleAggregation(expr.Op) {
 			return false
 		}
-	}
-	return true
-}
-
-func containsItemType(item ItemType, slice []ItemType) bool {
-	for _, curr := range slice {
-		if curr == item {
-			return true
+		if expr.Without {
+			return false
 		}
+		// Currently only supports non-nested functions.
+		// Not supported - avg(max_over_time(cpu[10m])), Supported - avg(cpu)
+		if e, ok := expr.Expr.(*Call); ok {
+			if e.Func != nil {
+				return false
+			}
+		}
+		return true
+	case *Call:
+		return isV3ioEligibleFunction(expr.Func.Name)
 	}
+
 	return false
 }
 
