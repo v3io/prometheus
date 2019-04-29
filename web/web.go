@@ -35,11 +35,10 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	template_text "text/template"
 	"time"
 
 	"google.golang.org/grpc"
-
-	template_text "text/template"
 
 	"github.com/cockroachdb/cmux"
 	"github.com/go-kit/kit/log"
@@ -363,11 +362,13 @@ func New(logger log.Logger, o *Options) *Handler {
 		resp, err := client.Do(req)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
+			level.Warn(h.logger).Log("msg", "Prometheus is Unhealthy", "error", err)
 			fmt.Fprintf(w, "Prometheus is Unhealthy: %v\n", err)
 			return
 		}
 		if resp.StatusCode != http.StatusOK {
 			w.WriteHeader(http.StatusInternalServerError)
+			level.Warn(h.logger).Log("msg", "Prometheus is Unhealthy because it could not find schema file.", "schemaUrl", schemaUrl, "response", resp)
 			fmt.Fprintf(w, "Prometheus is Unhealthy because it could not find %s: %+v\n", schemaUrl, resp)
 			return
 		}
@@ -377,6 +378,7 @@ func New(logger log.Logger, o *Options) *Handler {
 	router.Get("/-/ready", readyf(func(w http.ResponseWriter, r *http.Request) {
 		if o.V3ioConfig == nil {
 			w.WriteHeader(http.StatusInternalServerError)
+			level.Warn(h.logger).Log("msg", "Prometheus is not ready: still waiting on V3IO storage.")
 			fmt.Fprintf(w, "Prometheus is not ready: still waiting on V3IO storage.\n")
 			return
 		}
