@@ -35,10 +35,11 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	template_text "text/template"
 	"time"
 
 	"google.golang.org/grpc"
+
+	template_text "text/template"
 
 	"github.com/cockroachdb/cmux"
 	"github.com/go-kit/kit/log"
