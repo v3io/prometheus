@@ -354,9 +354,9 @@ func New(logger log.Logger, o *Options) *Handler {
 			return
 		}
 		req.Header.Add("X-v3io-function", "GetItem")
-		req.Body = ioutil.NopCloser(strings.NewReader(`{AttibutesToGet:"__name"}`))
+		req.Body = ioutil.NopCloser(strings.NewReader(`{"AttributesToGet":"__name"}`))
 		if o.V3ioConfig.AccessKey != "" {
-			req.Header.Add("X-v3io-access-key", o.V3ioConfig.AccessKey)
+			req.Header.Add("X-v3io-session-key", o.V3ioConfig.AccessKey)
 		} else if o.V3ioConfig.Password != "" {
 			base64UserPassword := base64.StdEncoding.EncodeToString([]byte(o.V3ioConfig.Username + ":" + o.V3ioConfig.Password))
 			req.Header.Add("Authorization", "Basic "+base64UserPassword)
