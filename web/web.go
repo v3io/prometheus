@@ -341,6 +341,7 @@ func New(logger log.Logger, o *Options) *Handler {
 	router.Get("/-/healthy", func(w http.ResponseWriter, r *http.Request) {
 		if o.V3ioConfig == nil {
 			w.WriteHeader(http.StatusInternalServerError)
+			level.Warn(h.logger).Log("msg", "Prometheus is Unhealthy: still waiting on V3IO storage.")
 			fmt.Fprintf(w, "Prometheus is Unhealthy: still waiting on V3IO storage.\n")
 			return
 		}
@@ -348,6 +349,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		req, err := http.NewRequest("GET", schemaUrl, nil)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
+			level.Warn(h.logger).Log("msg", "Prometheus is Unhealthy.", "error", err)
 			fmt.Fprintf(w, "Prometheus is Unhealthy: %v\n", err)
 			return
 		}
@@ -363,7 +365,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		resp, err := client.Do(req)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			level.Warn(h.logger).Log("msg", "Prometheus is Unhealthy", "error", err)
+			level.Warn(h.logger).Log("msg", "Prometheus is Unhealthy.", "error", err)
 			fmt.Fprintf(w, "Prometheus is Unhealthy: %v\n", err)
 			return
 		}
@@ -374,6 +376,7 @@ func New(logger log.Logger, o *Options) *Handler {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
+		level.Info(h.logger).Log("msg", "Prometheus is Healthy.")
 		fmt.Fprintf(w, "Prometheus is Healthy.\n")
 	})
 	router.Get("/-/ready", readyf(func(w http.ResponseWriter, r *http.Request) {
@@ -384,6 +387,7 @@ func New(logger log.Logger, o *Options) *Handler {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
+		level.Info(h.logger).Log("msg", "Prometheus is Ready.")
 		fmt.Fprintf(w, "Prometheus is Ready.\n")
 	}))
 
