@@ -587,7 +587,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 				params.End = params.End - offsetMilliseconds
 			}
 
-			level.Debug(ng.logger).Log("msg", "Querying v3io vector selector",
+			level.Info(ng.logger).Log("msg", "Querying v3io vector selector",
 				"useV3ioAggregations", querier.(*tsdb.V3ioPromQuerier).UseAggregates,
 				"use3ioAggregationConfig", querier.(*tsdb.V3ioPromQuerier).UseAggregatesConfig)
 			set, wrn, err = querier.Select(params, n.LabelMatchers...)
@@ -610,7 +610,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 				params.End = params.End - offsetMilliseconds
 			}
 
-			level.Debug(ng.logger).Log("msg", "Querying v3io matrix selector",
+			level.Info(ng.logger).Log("msg", "Querying v3io matrix selector",
 				"useV3ioAggregations", querier.(*tsdb.V3ioPromQuerier).UseAggregates,
 				"use3ioAggregationConfig", querier.(*tsdb.V3ioPromQuerier).UseAggregatesConfig)
 			set, wrn, err = querier.Select(params, n.LabelMatchers...)
