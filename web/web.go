@@ -376,7 +376,7 @@ func New(logger log.Logger, o *Options) *Handler {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		level.Info(h.logger).Log("msg", "Prometheus is Healthy.")
+		level.Debug(h.logger).Log("msg", "Prometheus is Healthy.")
 		fmt.Fprintf(w, "Prometheus is Healthy.\n")
 	})
 	router.Get("/-/ready", readyf(func(w http.ResponseWriter, r *http.Request) {
@@ -387,7 +387,7 @@ func New(logger log.Logger, o *Options) *Handler {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		level.Info(h.logger).Log("msg", "Prometheus is Ready.")
+		level.Debug(h.logger).Log("msg", "Prometheus is Ready.")
 		fmt.Fprintf(w, "Prometheus is Ready.\n")
 	}))
 
