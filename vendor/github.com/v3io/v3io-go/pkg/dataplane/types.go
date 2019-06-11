@@ -1,80 +1,72 @@
+/*
+Copyright 2018 The v3io Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package v3io
 
 import (
+	"context"
+	"crypto/tls"
 	"encoding/xml"
-
-	"github.com/valyala/fasthttp"
+	"time"
 )
 
 //
-// Request / response
+// Control plane
 //
 
-type Request struct {
-	ID uint64
-
-	// the container on which the request was performed (if applicable)
-	container *Container
-
-	// the session on which the request was performed (if applicable)
-	session *Session
-
-	// holds the input (e.g. ListBucketInput, GetItemInput)
-	Input interface{}
-
-	// a user supplied context
-	Context interface{}
-
-	// the channel to which the response must be posted
-	responseChan chan *Response
-
-	// pointer to container
-	requestResponse *RequestResponse
-
-	// Request time
-	SendTimeNanoseconds int64
+type NewContextInput struct {
+	ClusterEndpoints []string
+	NumWorkers       int
+	RequestChanLen   int
+	TlsConfig        *tls.Config
+	DialTimeout      time.Duration
 }
 
-type Response struct {
-	response *fasthttp.Response
-
-	// hold a decoded output, if any
-	Output interface{}
-
-	// Equal to the ID of request
-	ID uint64
-
-	// holds the error for async responses
-	Error error
-
-	// a user supplied context
-	Context interface{}
-
-	// pointer to container
-	requestResponse *RequestResponse
+type NewSessionInput struct {
+	Username  string
+	Password  string
+	AccessKey string
 }
 
-func (r *Response) Release() {
-	if r.response != nil {
-		fasthttp.ReleaseResponse(r.response)
-	}
+type NewContainerInput struct {
+	ContainerName string
 }
 
-func (r *Response) Body() []byte {
-	return r.response.Body()
+//
+// Data plane
+//
+
+type DataPlaneInput struct {
+	Ctx                 context.Context
+	ContainerName       string
+	AuthenticationToken string
+	AccessKey           string
+	Timeout             time.Duration
 }
 
-func (r *Response) Request() *Request {
-	return &r.requestResponse.Request
+type DataPlaneOutput struct {
+	ctx context.Context
 }
 
-// holds both a request and response
-type RequestResponse struct {
-	Request  Request
-	Response Response
-}
+//
+// Container
+//
 
-type ListBucketInput struct {
+type GetContainerContentsInput struct {
+	DataPlaneInput
 	Path string
 }
 
@@ -82,18 +74,18 @@ type Content struct {
 	XMLName        xml.Name `xml:"Contents"`
 	Key            string   `xml:"Key"`
 	Size           int      `xml:"Size"`
-	LastSequenceId int      `xml:"LastSequenceId"`
+	LastSequenceID int      `xml:"LastSequenceId"`
 	ETag           string   `xml:"ETag"`
 	LastModified   string   `xml:"LastModified"`
 }
 
 type CommonPrefix struct {
-	XMLName xml.Name `xml:"CommonPrefixes"`
-	Prefix  string   `xml:"Prefix"`
+	CommonPrefixes xml.Name `xml:"CommonPrefixes"`
+	Prefix         string   `xml:"Prefix"`
 }
 
-type ListBucketOutput struct {
-	XMLName        xml.Name       `xml:"ListBucketResult"`
+type GetContainerContentsOutput struct {
+	BucketName     xml.Name       `xml:"ListBucketResult"`
 	Name           string         `xml:"Name"`
 	NextMarker     string         `xml:"NextMarker"`
 	MaxKeys        string         `xml:"MaxKeys"`
@@ -101,70 +93,78 @@ type ListBucketOutput struct {
 	CommonPrefixes []CommonPrefix `xml:"CommonPrefixes"`
 }
 
-type ListAllInput struct {
+type GetContainersInput struct {
+	DataPlaneInput
 }
 
-type ListAllOutput struct {
+type GetContainersOutput struct {
+	DataPlaneOutput
 	XMLName xml.Name    `xml:"ListAllMyBucketsResult"`
 	Owner   interface{} `xml:"Owner"`
-	Buckets Buckets     `xml:"Buckets"`
+	Results Containers  `xml:"Buckets"`
 }
 
-type Buckets struct {
-	XMLName xml.Name `xml:"Buckets"`
-	Bucket  []Bucket `xml:"Bucket"`
+type Containers struct {
+	Name       xml.Name        `xml:"Buckets"`
+	Containers []ContainerInfo `xml:"Bucket"`
 }
 
-type Bucket struct {
-	XMLName      xml.Name `xml:"Bucket"`
+type ContainerInfo struct {
+	BucketName   xml.Name `xml:"Bucket"`
 	Name         string   `xml:"Name"`
 	CreationDate string   `xml:"CreationDate"`
-	Id           int      `xml:"Id"`
+	ID           int      `xml:"Id"`
 }
 
+//
+// Object
+//
+
 type GetObjectInput struct {
-	Path string
+	DataPlaneInput
+	Path     string
+	Offset   int
+	NumBytes int
 }
 
 type PutObjectInput struct {
-	Path string
-	Body []byte
+	DataPlaneInput
+	Path   string
+	Offset int
+	Body   []byte
 }
 
 type DeleteObjectInput struct {
+	DataPlaneInput
 	Path string
 }
 
-type SetObjectInput struct {
-	Path                       string
-	ValidationModifiedTimeSec  uint64
-	ValidationModifiedTimeNsec uint64
-	ValidationOperation        string
-	ValidationMask             uint64
-	ValidationValue            uint64
-	SetOperation               string
-	DataMask                   uint64
-	DataValue                  uint64
-}
+//
+// KV
+//
 
 type PutItemInput struct {
+	DataPlaneInput
 	Path       string
 	Condition  string
 	Attributes map[string]interface{}
 }
 
 type PutItemsInput struct {
+	DataPlaneInput
 	Path      string
 	Condition string
 	Items     map[string]map[string]interface{}
 }
 
 type PutItemsOutput struct {
+	DataPlaneOutput
 	Success bool
 	Errors  map[string]error
 }
 
 type UpdateItemInput struct {
+	DataPlaneInput
 	Path       string
 	Attributes map[string]interface{}
 	Expression *string
@@ -172,15 +172,18 @@ type UpdateItemInput struct {
 }
 
 type GetItemInput struct {
+	DataPlaneInput
 	Path           string
 	AttributeNames []string
 }
 
 type GetItemOutput struct {
+	DataPlaneOutput
 	Item Item
 }
 
 type GetItemsInput struct {
+	DataPlaneInput
 	Path              string
 	AttributeNames    []string
 	Filter            string
@@ -194,16 +197,15 @@ type GetItemsInput struct {
 }
 
 type GetItemsOutput struct {
+	DataPlaneOutput
 	Last       bool
 	NextMarker string
 	Items      []Item
 }
 
-type CreateStreamInput struct {
-	Path                 string
-	ShardCount           int
-	RetentionPeriodHours int
-}
+//
+// Stream
+//
 
 type StreamRecord struct {
 	ShardID      *int
@@ -212,7 +214,29 @@ type StreamRecord struct {
 	PartitionKey string
 }
 
+type SeekShardInputType int
+
+const (
+	SeekShardInputTypeTime SeekShardInputType = iota
+	SeekShardInputTypeSequence
+	SeekShardInputTypeLatest
+	SeekShardInputTypeEarliest
+)
+
+type CreateStreamInput struct {
+	DataPlaneInput
+	Path                 string
+	ShardCount           int
+	RetentionPeriodHours int
+}
+
+type DeleteStreamInput struct {
+	DataPlaneInput
+	Path string
+}
+
 type PutRecordsInput struct {
+	DataPlaneInput
 	Path    string
 	Records []*StreamRecord
 }
@@ -225,24 +249,13 @@ type PutRecordResult struct {
 }
 
 type PutRecordsOutput struct {
+	DataPlaneOutput
 	FailedRecordCount int
 	Records           []PutRecordResult
 }
 
-type DeleteStreamInput struct {
-	Path string
-}
-
-type SeekShardInputType int
-
-const (
-	SeekShardInputTypeTime SeekShardInputType = iota
-	SeekShardInputTypeSequence
-	SeekShardInputTypeLatest
-	SeekShardInputTypeEarliest
-)
-
 type SeekShardInput struct {
+	DataPlaneInput
 	Path                   string
 	Type                   SeekShardInputType
 	StartingSequenceNumber int
@@ -250,10 +263,12 @@ type SeekShardInput struct {
 }
 
 type SeekShardOutput struct {
+	DataPlaneOutput
 	Location string
 }
 
 type GetRecordsInput struct {
+	DataPlaneInput
 	Path     string
 	Location string
 	Limit    int
@@ -269,6 +284,7 @@ type GetRecordsResult struct {
 }
 
 type GetRecordsOutput struct {
+	DataPlaneOutput
 	NextLocation        string
 	MSecBehindLatest    int
 	RecordsBehindLatest int

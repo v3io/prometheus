@@ -85,7 +85,7 @@ require (
 	github.com/shurcooL/vfsgen v0.0.0-20180711163814-62bca832be04
 	github.com/smartystreets/goconvey v0.0.0-20190306220146-200a235640ff // indirect
 	github.com/stretchr/testify v1.3.0
-	github.com/v3io/v3io-tsdb v0.9.0
+	github.com/v3io/v3io-tsdb v0.9.2
 	go.opencensus.io v0.19.2 // indirect
 	golang.org/x/net v0.0.0-20190311183353-d8887717615a
 	golang.org/x/oauth2 v0.0.0-20190226205417-e64efc72b421

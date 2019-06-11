@@ -1,12 +1,6 @@
 package v3io
 
-import (
-	"errors"
-)
-
-var ErrInvalidTypeConversion = errors.New("Invalid type conversion")
-
-type SyncItemsCursor struct {
+type ItemsCursor struct {
 	currentItem     Item
 	currentError    error
 	currentResponse *Response
@@ -14,41 +8,41 @@ type SyncItemsCursor struct {
 	moreItemsExist  bool
 	itemIndex       int
 	items           []Item
-	input           *GetItemsInput
-	container       *SyncContainer
+	getItemsInput   *GetItemsInput
+	container       Container
 }
 
-func newSyncItemsCursor(container *SyncContainer, input *GetItemsInput) (*SyncItemsCursor, error) {
-	newSyncItemsCursor := &SyncItemsCursor{
-		container: container,
-		input:     input,
+func NewItemsCursor(container Container, getItemsInput *GetItemsInput) (*ItemsCursor, error) {
+	newItemsCursor := &ItemsCursor{
+		container:     container,
+		getItemsInput: getItemsInput,
 	}
 
-	response, err := container.GetItems(input)
+	response, err := container.GetItemsSync(getItemsInput)
 	if err != nil {
 		return nil, err
 	}
 
-	newSyncItemsCursor.setResponse(response)
+	newItemsCursor.setResponse(response)
 
-	return newSyncItemsCursor, nil
+	return newItemsCursor, nil
 }
 
 // Err returns the last error
-func (ic *SyncItemsCursor) Err() error {
+func (ic *ItemsCursor) Err() error {
 	return ic.currentError
 }
 
 // Release releases a cursor and its underlying resources
-func (ic *SyncItemsCursor) Release() {
+func (ic *ItemsCursor) Release() {
 	if ic.currentResponse != nil {
 		ic.currentResponse.Release()
 	}
 }
 
 // Next gets the next matching item. this may potentially block as this lazy loads items from the collection
-func (ic *SyncItemsCursor) Next() bool {
-	item, err := ic.NextItem()
+func (ic *ItemsCursor) NextSync() bool {
+	item, err := ic.NextItemSync()
 
 	if item == nil || err != nil {
 		return false
@@ -58,7 +52,7 @@ func (ic *SyncItemsCursor) Next() bool {
 }
 
 // NextItem gets the next matching item. this may potentially block as this lazy loads items from the collection
-func (ic *SyncItemsCursor) NextItem() (Item, error) {
+func (ic *ItemsCursor) NextItemSync() (Item, error) {
 
 	// are there any more items left in the previous response we received?
 	if ic.itemIndex < len(ic.items) {
@@ -78,10 +72,10 @@ func (ic *SyncItemsCursor) NextItem() (Item, error) {
 	}
 
 	// get the previous request input and modify it with the marker
-	ic.input.Marker = ic.nextMarker
+	ic.getItemsInput.Marker = ic.nextMarker
 
 	// invoke get items
-	newResponse, err := ic.container.GetItems(ic.input)
+	newResponse, err := ic.container.GetItemsSync(ic.getItemsInput)
 	if err != nil {
 		return nil, err
 	}
@@ -93,14 +87,14 @@ func (ic *SyncItemsCursor) NextItem() (Item, error) {
 	ic.setResponse(newResponse)
 
 	// and recurse into next now that we repopulated response
-	return ic.NextItem()
+	return ic.NextItemSync()
 }
 
 // gets all items
-func (ic *SyncItemsCursor) All() ([]Item, error) {
+func (ic *ItemsCursor) AllSync() ([]Item, error) {
 	var items []Item
 
-	for ic.Next() {
+	for ic.NextSync() {
 		items = append(items, ic.GetItem())
 	}
 
@@ -111,27 +105,27 @@ func (ic *SyncItemsCursor) All() ([]Item, error) {
 	return items, nil
 }
 
-func (ic *SyncItemsCursor) GetField(name string) interface{} {
+func (ic *ItemsCursor) GetField(name string) interface{} {
 	return ic.currentItem[name]
 }
 
-func (ic *SyncItemsCursor) GetFieldInt(name string) (int, error) {
+func (ic *ItemsCursor) GetFieldInt(name string) (int, error) {
 	return ic.currentItem.GetFieldInt(name)
 }
 
-func (ic *SyncItemsCursor) GetFieldString(name string) (string, error) {
+func (ic *ItemsCursor) GetFieldString(name string) (string, error) {
 	return ic.currentItem.GetFieldString(name)
 }
 
-func (ic *SyncItemsCursor) GetFields() map[string]interface{} {
+func (ic *ItemsCursor) GetFields() map[string]interface{} {
 	return ic.currentItem
 }
 
-func (ic *SyncItemsCursor) GetItem() Item {
+func (ic *ItemsCursor) GetItem() Item {
 	return ic.currentItem
 }
 
-func (ic *SyncItemsCursor) setResponse(response *Response) {
+func (ic *ItemsCursor) setResponse(response *Response) {
 	ic.currentResponse = response
 
 	getItemsOutput := response.Output.(*GetItemsOutput)
