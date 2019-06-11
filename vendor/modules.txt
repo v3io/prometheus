@@ -201,9 +201,9 @@ github.com/klauspost/compress/zlib
 github.com/klauspost/cpuid
 # github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515
 github.com/kr/logfmt
-# github.com/mattn/go-colorable v0.0.9
+# github.com/mattn/go-colorable v0.1.1
 github.com/mattn/go-colorable
-# github.com/mattn/go-isatty v0.0.4
+# github.com/mattn/go-isatty v0.0.5
 github.com/mattn/go-isatty
 # github.com/matttproud/golang_protobuf_extensions v1.0.1
 github.com/matttproud/golang_protobuf_extensions/pbutil
@@ -219,6 +219,8 @@ github.com/modern-go/concurrent
 github.com/modern-go/reflect2
 # github.com/mwitkow/go-conntrack v0.0.0-20161129095857-cc309e4a2223
 github.com/mwitkow/go-conntrack
+# github.com/nuclio/errors v0.0.1
+github.com/nuclio/errors
 # github.com/nuclio/logger v0.0.1
 github.com/nuclio/logger
 # github.com/nuclio/zap v0.0.2
@@ -233,7 +235,7 @@ github.com/opentracing-contrib/go-stdlib/nethttp
 github.com/opentracing/opentracing-go
 github.com/opentracing/opentracing-go/log
 github.com/opentracing/opentracing-go/ext
-# github.com/pavius/zap v0.0.0-20180228181622-8d52692529b8
+# github.com/pavius/zap v1.4.2-0.20180228181622-8d52692529b8
 github.com/pavius/zap
 github.com/pavius/zap/zapcore
 github.com/pavius/zap/internal/bufferpool
@@ -299,9 +301,11 @@ github.com/stretchr/testify/assert
 # github.com/v3io/frames v0.0.0-20190328123118-1dad1ff610509e7b087d9cd390ed1b452caecf15 => github.com/v3io/frames v0.0.0-20190328123118-1dad1ff610509e7b087d9cd390ed1b452caecf15
 github.com/v3io/frames
 github.com/v3io/frames/pb
-# github.com/v3io/v3io-go-http v0.0.0-20190221115935-53e2b487c9a2
-github.com/v3io/v3io-go-http
-# github.com/v3io/v3io-tsdb v0.9.0 => github.com/v3io/v3io-tsdb v0.9.0
+# github.com/v3io/v3io-go v0.0.0-20180415000000-1486c75b0e590a14580f7d9b6cef7a944a231ca7
+github.com/v3io/v3io-go/pkg/dataplane
+github.com/v3io/v3io-go/pkg/errors
+github.com/v3io/v3io-go/pkg/dataplane/http
+# github.com/v3io/v3io-tsdb v0.9.2
 github.com/v3io/v3io-tsdb/pkg/aggregate
 github.com/v3io/v3io-tsdb/pkg/appender
 github.com/v3io/v3io-tsdb/pkg/config
@@ -315,7 +319,7 @@ github.com/v3io/v3io-tsdb/pkg/querier
 github.com/v3io/v3io-tsdb/pkg/tsdb/schema
 # github.com/valyala/bytebufferpool v1.0.0
 github.com/valyala/bytebufferpool
-# github.com/valyala/fasthttp v1.0.0
+# github.com/valyala/fasthttp v1.2.0
 github.com/valyala/fasthttp
 github.com/valyala/fasthttp/fasthttputil
 github.com/valyala/fasthttp/stackless
@@ -374,7 +378,7 @@ golang.org/x/oauth2/jwt
 # golang.org/x/sync v0.0.0-20190227155943-e225da77a7e6
 golang.org/x/sync/errgroup
 golang.org/x/sync/semaphore
-# golang.org/x/sys v0.0.0-20190215142949-d0b11bdaac8a
+# golang.org/x/sys v0.0.0-20190222072716-a9d3bda3a223
 golang.org/x/sys/unix
 golang.org/x/sys/windows
 # golang.org/x/text v0.3.0
