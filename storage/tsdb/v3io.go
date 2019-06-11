@@ -233,7 +233,7 @@ func (s *ReadyStorage) createV3ioPromAdapater(configPath string) (*V3ioPromAdapt
 		s.logger.Log("msg", "Creating v3io adapter", "config", string(jsonLoadedConfig))
 	}
 
-	adapter, err := NewV3ioProm(loadedConfig, nil, nil)
+	adapter, err := NewV3ioProm(loadedConfig, nil)
 	adapter.SetUseV3ioAggregations(s.useV3ioAggregations)
 	if err != nil {
 		return nil, nil, err

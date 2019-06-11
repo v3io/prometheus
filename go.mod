@@ -85,7 +85,6 @@ require (
 	github.com/shurcooL/vfsgen v0.0.0-20180711163814-62bca832be04
 	github.com/smartystreets/goconvey v0.0.0-20190306220146-200a235640ff // indirect
 	github.com/stretchr/testify v1.3.0
-	github.com/v3io/v3io-go-http v0.0.0-20190221115935-53e2b487c9a2
 	github.com/v3io/v3io-tsdb v0.9.0
 	go.opencensus.io v0.19.2 // indirect
 	golang.org/x/net v0.0.0-20190311183353-d8887717615a
@@ -115,5 +114,3 @@ replace labix.org/v2/mgo => github.com/go-mgo/mgo v0.0.0-20180705113738-7446a034
 replace launchpad.net/gocheck => github.com/go-check/check v0.0.0-20180628173108-788fd78401277ebd861206a03c884797c6ec5541
 
 replace github.com/v3io/frames => github.com/v3io/frames v0.0.0-20190328123118-1dad1ff610509e7b087d9cd390ed1b452caecf15
-
-replace github.com/v3io/v3io-tsdb => github.com/v3io/v3io-tsdb v0.9.0

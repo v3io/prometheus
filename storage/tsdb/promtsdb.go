@@ -9,7 +9,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/v3io/v3io-go-http"
 	"github.com/v3io/v3io-tsdb/pkg/aggregate"
 	tsdbAppender "github.com/v3io/v3io-tsdb/pkg/appender"
 	"github.com/v3io/v3io-tsdb/pkg/config"
@@ -25,7 +24,7 @@ type V3ioPromAdapter struct {
 	useV3ioAggregations bool // Indicate whether or not to use v3io aggregations by default (passed from prometheus.yml)
 }
 
-func NewV3ioProm(cfg *config.V3ioConfig, container *v3io.Container, logger logger.Logger) (*V3ioPromAdapter, error) {
+func NewV3ioProm(cfg *config.V3ioConfig, logger logger.Logger) (*V3ioPromAdapter, error) {
 
 	if logger == nil {
 		newLogger, err := utils.NewLogger(cfg.LogLevel)
@@ -35,7 +34,7 @@ func NewV3ioProm(cfg *config.V3ioConfig, container *v3io.Container, logger logge
 		logger = newLogger
 	}
 
-	adapter, err := tsdb.NewV3ioAdapter(cfg, container, logger)
+	adapter, err := tsdb.NewV3ioAdapter(cfg, nil, logger)
 	newAdapter := V3ioPromAdapter{db: adapter, logger: logger.GetChild("v3io-prom-adapter")}
 	return &newAdapter, err
 }

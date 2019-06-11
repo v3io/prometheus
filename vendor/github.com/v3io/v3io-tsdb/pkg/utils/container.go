@@ -28,10 +28,11 @@ import (
 	"github.com/nuclio/logger"
 	"github.com/nuclio/zap"
 	"github.com/pkg/errors"
-	"github.com/v3io/v3io-go/pkg/dataplane"
-	"github.com/v3io/v3io-go/pkg/dataplane/http"
+	"github.com/v3io/v3io-go-http"
 	"github.com/v3io/v3io-tsdb/pkg/config"
 )
+
+const defaultHttpTimeout = 30 * time.Second
 
 func NewLogger(level string) (logger.Logger, error) {
 	var logLevel nucliozap.Level
@@ -55,29 +56,41 @@ func NewLogger(level string) (logger.Logger, error) {
 	return log, nil
 }
 
-func CreateContainer(logger logger.Logger, cfg *config.V3ioConfig, httpTimeout time.Duration) (v3io.Container, error) {
-	newContextInput := &v3io.NewContextInput{
-		ClusterEndpoints: []string{cfg.WebApiEndpoint},
-		NumWorkers:       cfg.Workers,
-		DialTimeout:      httpTimeout,
-	}
-	context, err := v3iohttp.NewContext(logger, newContextInput)
+func CreateContainer(logger logger.Logger, cfg *config.V3ioConfig) (*v3io.Container, error) {
+	// Create context
+	context, err := v3io.NewContext(logger, cfg.WebApiEndpoint, cfg.Workers)
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to create a V3IO TSDB client.")
 	}
 
-	session, err := context.NewSession(&v3io.NewSessionInput{
-		Username:  cfg.Username,
-		Password:  cfg.Password,
-		AccessKey: cfg.AccessKey,
-	})
-	if err != nil {
-		return nil, errors.Wrap(err, "Failed to create session.")
+	if cfg.HttpTimeout == "" {
+		context.Sync.Timeout = defaultHttpTimeout
+	} else {
+		timeout, err := time.ParseDuration(cfg.HttpTimeout)
+		if err != nil {
+			logger.Warn("Failed to parse httpTimeout '%s'. Defaulting to %d millis.", cfg.HttpTimeout, defaultHttpTimeout/time.Millisecond)
+			context.Sync.Timeout = defaultHttpTimeout
+		} else {
+			context.Sync.Timeout = timeout
+		}
 	}
 
-	container, err := session.NewContainer(&v3io.NewContainerInput{ContainerName: cfg.Container})
+	// Create session
+	sessionConfig := &v3io.SessionConfig{
+		Username:   cfg.Username,
+		Password:   cfg.Password,
+		Label:      "tsdb",
+		SessionKey: cfg.AccessKey,
+	}
+	session, err := context.NewSessionFromConfig(sessionConfig)
 	if err != nil {
-		return nil, errors.Wrap(err, "Failed to create container.")
+		return nil, errors.Wrap(err, "Failed to create a session.")
+	}
+
+	// Create the container
+	container, err := session.NewContainer(cfg.Container)
+	if err != nil {
+		return nil, errors.Wrap(err, "Failed to create a container.")
 	}
 
 	return container, nil
@@ -94,7 +107,7 @@ func AsInt64Array(val []byte) []uint64 {
 	return array
 }
 
-func DeleteTable(logger logger.Logger, container v3io.Container, path, filter string, workers int) error {
+func DeleteTable(logger logger.Logger, container *v3io.Container, path, filter string, workers int) error {
 	input := v3io.GetItemsInput{Path: path, AttributeNames: []string{config.ObjectNameAttrName}, Filter: filter}
 	iter, err := NewAsyncItemsCursor(container, &input, workers, []string{}, logger)
 	if err != nil {

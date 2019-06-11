@@ -183,8 +183,7 @@ func parseUintBuf(b []byte) (int, int, error) {
 			}
 			return v, i, nil
 		}
-		// Test for overflow.
-		if v*10 < v {
+		if i >= maxIntChars {
 			return -1, i, errTooLongInt
 		}
 		v = 10*v + int(k)
@@ -434,4 +433,24 @@ func appendQuotedPath(dst, src []byte) []byte {
 		}
 	}
 	return dst
+}
+
+// EqualBytesStr returns true if string(b) == s.
+//
+// This function has no performance benefits comparing to string(b) == s.
+// It is left here for backwards compatibility only.
+//
+// Deprecated: may be deleted soon.
+func EqualBytesStr(b []byte, s string) bool {
+	return string(b) == s
+}
+
+// AppendBytesStr appends src to dst and returns the extended dst.
+//
+// This function has no performance benefits comparing to append(dst, src...).
+// It is left here for backwards compatibility only.
+//
+// Deprecated: may be deleted soon.
+func AppendBytesStr(dst []byte, src string) []byte {
+	return append(dst, src...)
 }

@@ -11,7 +11,7 @@ import (
 	"github.com/nuclio/logger"
 	"github.com/pkg/errors"
 	"github.com/v3io/frames"
-	"github.com/v3io/v3io-go/pkg/dataplane"
+	"github.com/v3io/v3io-go-http"
 	"github.com/v3io/v3io-tsdb/pkg/aggregate"
 	"github.com/v3io/v3io-tsdb/pkg/chunkenc"
 	"github.com/v3io/v3io-tsdb/pkg/config"
@@ -23,7 +23,7 @@ const defaultToleranceFactor = 2
 
 type selectQueryContext struct {
 	logger     logger.Logger
-	container  v3io.Container
+	container  *v3io.Container
 	workers    int
 	v3ioConfig *config.V3ioConfig
 
@@ -32,6 +32,7 @@ type selectQueryContext struct {
 
 	columnsSpec            []columnMeta
 	columnsSpecByMetric    map[string][]columnMeta
+	isAllMetrics           bool
 	totalColumns           int
 	isCrossSeriesAggregate bool
 
@@ -346,6 +347,7 @@ func (queryCtx *selectQueryContext) processQueryResults(query *partQuery) error 
 				lset,
 				hash,
 				queryCtx.isRawQuery(),
+				queryCtx.isAllMetrics,
 				queryCtx.getResultBucketsSize(),
 				results.IsServerAggregates(),
 				queryCtx.showAggregateLabel)
@@ -408,6 +410,7 @@ func (queryCtx *selectQueryContext) createColumnSpecs() ([]columnMeta, map[strin
 		}
 		columnsSpecByMetric[col.Metric] = append(columnsSpecByMetric[col.Metric], colMeta)
 		columnsSpec = append(columnsSpec, colMeta)
+		queryCtx.isAllMetrics = queryCtx.isAllMetrics || col.Metric == ""
 	}
 
 	// Adding hidden columns if needed
@@ -415,7 +418,6 @@ func (queryCtx *selectQueryContext) createColumnSpecs() ([]columnMeta, map[strin
 		var aggregatesMask aggregate.AggrType
 		var aggregates []aggregate.AggrType
 		var metricInterpolationType InterpolationType
-		var metricInterpolationTolerance int64
 		for _, colSpec := range cols {
 			aggregatesMask |= colSpec.function
 			aggregates = append(aggregates, colSpec.function)
@@ -423,16 +425,11 @@ func (queryCtx *selectQueryContext) createColumnSpecs() ([]columnMeta, map[strin
 			if metricInterpolationType == 0 {
 				if colSpec.interpolationType != 0 {
 					metricInterpolationType = colSpec.interpolationType
-					metricInterpolationTolerance = colSpec.interpolationTolerance
 				}
 			} else if colSpec.interpolationType != 0 && colSpec.interpolationType != metricInterpolationType {
 				return nil, nil, fmt.Errorf("multiple interpolation for the same metric are not supported, got %v and %v",
 					metricInterpolationType.String(),
 					colSpec.interpolationType.String())
-			} else if metricInterpolationTolerance != colSpec.interpolationTolerance {
-				return nil, nil, fmt.Errorf("different interpolation tolerances for the same metric are not supported, got %v and %v",
-					metricInterpolationTolerance,
-					colSpec.interpolationTolerance)
 			}
 		}
 
@@ -449,12 +446,10 @@ func (queryCtx *selectQueryContext) createColumnSpecs() ([]columnMeta, map[strin
 		// After creating all columns set their interpolation function
 		for i := 0; i < len(columnsSpecByMetric[metric]); i++ {
 			columnsSpecByMetric[metric][i].interpolationType = metricInterpolationType
-			columnsSpecByMetric[metric][i].interpolationTolerance = metricInterpolationTolerance
 		}
 		for i, col := range columnsSpec {
 			if col.metric == metric {
 				columnsSpec[i].interpolationType = metricInterpolationType
-				columnsSpec[i].interpolationTolerance = metricInterpolationTolerance
 			}
 		}
 	}

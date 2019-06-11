@@ -27,8 +27,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/v3io/v3io-go/pkg/dataplane"
-	"github.com/v3io/v3io-go/pkg/errors"
+	"github.com/v3io/v3io-go-http"
 )
 
 // Start event loops for handling metric updates (appends and Get/Update DB responses)
@@ -299,7 +298,7 @@ func (mc *MetricsCache) handleResponse(metric *MetricState, resp *v3io.Response,
 
 			// Metrics with too many update errors go into Error state
 			metric.retryCount++
-			if e, hasStatusCode := resp.Error.(v3ioerrors.ErrorWithStatusCode); hasStatusCode && e.StatusCode() != http.StatusServiceUnavailable {
+			if e, hasStatusCode := resp.Error.(v3io.ErrorWithStatusCode); hasStatusCode && e.StatusCode() != http.StatusServiceUnavailable {
 				mc.logger.ErrorWith(fmt.Sprintf("Chunk update failed with status code %d.", e.StatusCode()))
 				setError(mc, metric, errors.Wrap(resp.Error, fmt.Sprintf("Chunk update failed due to status code %d.", e.StatusCode())))
 				clear()

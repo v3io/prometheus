@@ -16,7 +16,7 @@ import (
 type workerPool struct {
 	// Function for serving server connections.
 	// It must leave c unclosed.
-	WorkerFunc ServeHandler
+	WorkerFunc func(c net.Conn) error
 
 	MaxWorkersCount int
 
