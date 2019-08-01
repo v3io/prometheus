@@ -68,7 +68,8 @@ func LoadFile(filename string) (*Config, error) {
 var (
 	// DefaultConfig is the default top-level configuration.
 	DefaultConfig = Config{
-		GlobalConfig: DefaultGlobalConfig,
+		GlobalConfig:        DefaultGlobalConfig,
+		UseV3ioAggregations: true,
 	}
 
 	// DefaultGlobalConfig is the default global configuration.
