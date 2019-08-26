@@ -201,6 +201,7 @@ github.com/kr/pretty v0.1.0/go.mod h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORN
 github.com/kr/pty v1.1.1/go.mod h1:pFQYn66WHrOpPYNljwOMqo10TkYh1fy3cYio2l3bCsQ=
 github.com/kr/text v0.1.0 h1:45sCR5RtlFHMR4UwH9sdQ5TC8v0qDQCHnXt+kaKSTVE=
 github.com/kr/text v0.1.0/go.mod h1:4Jbv+DJW3UT/LiOwJeYQe1efqtUx/iVham/4vfdArNI=
+github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+fNqagV/RAw=
 github.com/lib/pq v1.0.0 h1:X5PMW56eZitiTeO7tKzZxFCSpbFZJtkMMooicw2us9A=
 github.com/lib/pq v1.0.0/go.mod h1:5WUZQaWbwv1U+lTReE5YruASi9Al49XbQIvNi/34Woo=
 github.com/lightstep/lightstep-tracer-go v0.15.6 h1:D0GGa7afJ7GcQvu5as6ssLEEKYXvRgKI5d5cevtz8r4=
@@ -284,6 +285,7 @@ github.com/peterbourgon/g2s v0.0.0-20170223122336-d4e7ad98afea h1:sKwxy1H95npauw
 github.com/peterbourgon/g2s v0.0.0-20170223122336-d4e7ad98afea/go.mod h1:1VcHEd3ro4QMoHfiNl/j7Jkln9+KQuorp0PItHMJYNg=
 github.com/petermattis/goid v0.0.0-20180202154549-b0b1615b78e5 h1:q2e307iGHPdTGp0hoxKjt1H5pDo6utceo3dQVK3I5XQ=
 github.com/petermattis/goid v0.0.0-20180202154549-b0b1615b78e5/go.mod h1:jvVRKCrJTQWu0XVbaOlby/2lO20uSCHEMzzplHXte1o=
+github.com/philhofer/fwd v1.0.0/go.mod h1:gk3iGcWd9+svBvR0sR+KPcfE+RNWozjowpeBVG3ZVNU=
 github.com/pierrec/lz4 v2.0.5+incompatible/go.mod h1:pdkljMzZIN41W+lC3N2tnIh5sFi+IEE17M5jbnwPHcY=
 github.com/pkg/errors v0.8.0 h1:WdK/asTD0HN+q6hsWO3/vpuAkAr+tw6aNJNDFFf0+qw=
 github.com/pkg/errors v0.8.0/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
@@ -350,10 +352,13 @@ github.com/stretchr/testify v1.2.2 h1:bSDNvY7ZPG5RlJ8otE/7V6gMiyenm9RtJ7IUVIAoJ1
 github.com/stretchr/testify v1.2.2/go.mod h1:a8OnRcib4nhh0OaRAV+Yts87kKdq0PP7pXfy6kDkUVs=
 github.com/stretchr/testify v1.3.0 h1:TivCn/peBQ7UY8ooIcPgZFpTNSz0Q2U6UrFlUfqbe0Q=
 github.com/stretchr/testify v1.3.0/go.mod h1:M5WIy9Dh21IEIfnGCwXGc5bZfKNJtfHm1UVUgZn+9EI=
+github.com/tinylib/msgp v1.1.0/go.mod h1:+d+yLhGm8mzTaHzB+wgMYrodPfmZrzkirds8fDWklFE=
 github.com/v3io/frames v0.0.0-20190328123118-1dad1ff610509e7b087d9cd390ed1b452caecf15 h1:Y/ABiIlS3tqLHsj0DZkkpMyvdoCmU1nwgQ0On6n6imk=
 github.com/v3io/frames v0.0.0-20190328123118-1dad1ff610509e7b087d9cd390ed1b452caecf15/go.mod h1:6aKW4Wl4A+gQhXH0JRCVOLgwvcrLyk+fqEpemuie094=
 github.com/v3io/v3io-go v0.0.0-20180415000000-1486c75b0e590a14580f7d9b6cef7a944a231ca7 h1:J+ps6exCjowNidrtawSQglJQpKrJ6v8UjBVTNrRTpMs=
 github.com/v3io/v3io-go v0.0.0-20180415000000-1486c75b0e590a14580f7d9b6cef7a944a231ca7/go.mod h1:MHc+d/Jg/y8lV4B9sgwTvuS3tEE9wS+kqtU0+D0Sr78=
+github.com/v3io/v3io-go v0.0.0-20190826150152-beb22c4a945d8f1d9765639a06b2116756146b15 h1:CvMkJkw8QFowc96UPv73JWwcg7Ivz9pPFN1liseiGnw=
+github.com/v3io/v3io-go v0.0.0-20190826150152-beb22c4a945d8f1d9765639a06b2116756146b15/go.mod h1:IFb6dJiyvJnOjXUoCoPJ5UViaYjgVYmqJb4fD1qDeLk=
 github.com/v3io/v3io-go-http v0.0.0-20190221115935-53e2b487c9a2 h1:NJc63wM25iS+ci5z7LVwjWD4QM0QpTQw/fovKzatss0=
 github.com/v3io/v3io-go-http v0.0.0-20190221115935-53e2b487c9a2/go.mod h1:GXYcR9MxgfbE3BJdkXki5EclvtS8Nxu2RQNLA8hMMog=
 github.com/v3io/v3io-tsdb v0.0.0-20190328071546-4e85f3df2d205fc7368d54184bb2ceff949ab4bd/go.mod h1:A+5yKC16QxLf+Fy5v7VvIxSw+jwsKHLhUS7dCYFDLAA=
@@ -365,6 +370,8 @@ github.com/v3io/v3io-tsdb v0.9.6 h1:N1IMo+Fk+B/afWcytseCjixhK3X674voI6b5o1VmaFY=
 github.com/v3io/v3io-tsdb v0.9.6/go.mod h1:cPLq5KvhxzdvRaVzy8HTDxousSFUaSRBRdhtd131JgU=
 github.com/v3io/v3io-tsdb v0.9.7 h1:56UtS2LsurVcNYnY0c1NUO8xtDBuuiJZU6xnBiXDrTw=
 github.com/v3io/v3io-tsdb v0.9.7/go.mod h1:cPLq5KvhxzdvRaVzy8HTDxousSFUaSRBRdhtd131JgU=
+github.com/v3io/v3io-tsdb v0.9.8 h1:74vTM4v+TPJsar3vioa4IIOwjgQ1mrPZueMk4Ze8BdQ=
+github.com/v3io/v3io-tsdb v0.9.8/go.mod h1:u+rpkZxYmy5L7EcGuReO0u44BlgGYHY2cuvZXgA159A=
 github.com/valyala/bytebufferpool v1.0.0 h1:GqA5TC/0021Y/b9FG4Oi9Mr3q7XYx6KllzawFIhcdPw=
 github.com/valyala/bytebufferpool v1.0.0/go.mod h1:6bBcMArwyJ5K/AmCkWv1jt77kVWyCJ6HpOuEn7z0Csc=
 github.com/valyala/fasthttp v1.0.0 h1:BwIoZQbBsTo3v2F5lz5Oy3TlTq4wLKTLV260EVTEWco=
@@ -498,3 +505,5 @@ k8s.io/kube-openapi v0.0.0-20190320154901-5e45bb682580 h1:fq0ZXW/BAIFZH+dazlups6
 k8s.io/kube-openapi v0.0.0-20190320154901-5e45bb682580/go.mod h1:BXM9ceUBTj2QnfH2MK1odQs778ajze1RxcmP6S8RVVc=
 sigs.k8s.io/yaml v1.1.0 h1:4A07+ZFc2wgJwo8YNlQpr1rVlgUDlxXHhPJciaPY5gs=
 sigs.k8s.io/yaml v1.1.0/go.mod h1:UJmg0vDUVViEyp3mgSv9WPwZCDxu4rQW1olrI1uml+o=
+zombiezen.com/go/capnproto2 v2.17.0+incompatible h1:sIoKPFGNlM38Qh+PBLa9Wzg1j99oInS/Qlk+5N/CHa4=
+zombiezen.com/go/capnproto2 v2.17.0+incompatible/go.mod h1:XO5Pr2SbXgqZwn0m0Ru54QBqpOf4K5AYBO+8LAOBQEQ=
