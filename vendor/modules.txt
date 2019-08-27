@@ -301,12 +301,12 @@ github.com/stretchr/testify/assert
 # github.com/v3io/frames v0.0.0-20190328123118-1dad1ff610509e7b087d9cd390ed1b452caecf15 => github.com/v3io/frames v0.0.0-20190328123118-1dad1ff610509e7b087d9cd390ed1b452caecf15
 github.com/v3io/frames
 github.com/v3io/frames/pb
-# github.com/v3io/v3io-go v0.0.0-20190826150152-beb22c4a945d8f1d9765639a06b2116756146b15
+# github.com/v3io/v3io-go v0.0.0-20190826150152-1f2c9a9a61cb715410a35662f5ddab2b306f95e7
 github.com/v3io/v3io-go/pkg/dataplane
 github.com/v3io/v3io-go/pkg/errors
 github.com/v3io/v3io-go/pkg/dataplane/http
 github.com/v3io/v3io-go/pkg/dataplane/schemas/node/common
-# github.com/v3io/v3io-tsdb v0.9.2 => github.com/v3io/v3io-tsdb v0.9.8
+# github.com/v3io/v3io-tsdb v0.9.2 => github.com/v3io/v3io-tsdb v0.9.9
 github.com/v3io/v3io-tsdb/pkg/aggregate
 github.com/v3io/v3io-tsdb/pkg/appender
 github.com/v3io/v3io-tsdb/pkg/config
