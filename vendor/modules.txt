@@ -306,7 +306,7 @@ github.com/v3io/v3io-go/pkg/dataplane
 github.com/v3io/v3io-go/pkg/errors
 github.com/v3io/v3io-go/pkg/dataplane/http
 github.com/v3io/v3io-go/pkg/dataplane/schemas/node/common
-# github.com/v3io/v3io-tsdb v0.9.2 => github.com/v3io/v3io-tsdb v0.9.13
+# github.com/v3io/v3io-tsdb v0.9.2 => github.com/v3io/v3io-tsdb v0.9.12-1
 github.com/v3io/v3io-tsdb/pkg/aggregate
 github.com/v3io/v3io-tsdb/pkg/appender
 github.com/v3io/v3io-tsdb/pkg/config
