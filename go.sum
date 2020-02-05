@@ -391,6 +391,8 @@ github.com/v3io/v3io-tsdb v0.9.11 h1:Offcqj7OzAezIYMqo+2l9ewvMS3gi3yb2bN5wcelago
 github.com/v3io/v3io-tsdb v0.9.11/go.mod h1:K5jxlyxnb/HGyFlPrJQtIbMWQBY6USFBsHYI/vzMKVo=
 github.com/v3io/v3io-tsdb v0.9.12-1 h1:DELCKAKYkEPw1/ELBZdfvay4440OrRzJUwTpIhlQjZE=
 github.com/v3io/v3io-tsdb v0.9.12-1/go.mod h1:Z6qZrj8Cb1CCLWfgk/166QM0oaUzdwMJ9G39shhUg6k=
+github.com/v3io/v3io-tsdb v0.9.12-2 h1:zywO/pdxSW9bHSCgyBc/wSTPO0ZpuK+C6AINg3s4ZuI=
+github.com/v3io/v3io-tsdb v0.9.12-2/go.mod h1:Z6qZrj8Cb1CCLWfgk/166QM0oaUzdwMJ9G39shhUg6k=
 github.com/v3io/v3io-tsdb v0.9.12 h1:uzB3D2HIHtO47zL79jR1Rw0ajd8y8mSKCP4jbXcihGY=
 github.com/v3io/v3io-tsdb v0.9.12/go.mod h1:Z6qZrj8Cb1CCLWfgk/166QM0oaUzdwMJ9G39shhUg6k=
 github.com/v3io/v3io-tsdb v0.9.13 h1:beckhXVWGqgt0x4suvdsFrUKvT0Ius68bi8pF/U9CSk=
