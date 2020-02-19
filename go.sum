@@ -321,8 +321,8 @@ github.com/rlmcpherson/s3gof3r v0.5.0 h1:1izOJpTiohSibfOHuNyEA/yQnAirh05enzEdmhe
 github.com/rlmcpherson/s3gof3r v0.5.0/go.mod h1:s7vv7SMDPInkitQMuZzH615G7yWHdrU2r/Go7Bo71Rs=
 github.com/rubyist/circuitbreaker v2.2.1+incompatible h1:KUKd/pV8Geg77+8LNDwdow6rVCAYOp8+kHUyFvL6Mhk=
 github.com/rubyist/circuitbreaker v2.2.1+incompatible/go.mod h1:Ycs3JgJADPuzJDwffe12k6BZT8hxVi6lFK+gWYJLN4A=
-github.com/russross/blackfriday v1.5.2+incompatible/go.mod h1:JO/DiYxRf+HjHt06OyowR9PTA263kcR/rfWxYHBV53g=
 github.com/russross/blackfriday v1.5.2/go.mod h1:JO/DiYxRf+HjHt06OyowR9PTA263kcR/rfWxYHBV53g=
+github.com/russross/blackfriday v1.5.2+incompatible/go.mod h1:JO/DiYxRf+HjHt06OyowR9PTA263kcR/rfWxYHBV53g=
 github.com/ryanuber/columnize v0.0.0-20160712163229-9b3edd62028f/go.mod h1:sm1tb6uqfes/u+d4ooFouqFdy9/2g9QGwK3SQygK0Ts=
 github.com/samuel/go-zookeeper v0.0.0-20161028232340-1d7be4effb13 h1:4AQBn5RJY4WH8t8TLEMZUsWeXHAUcoao42TCAfpEJJE=
 github.com/samuel/go-zookeeper v0.0.0-20161028232340-1d7be4effb13/go.mod h1:gi+0XIa01GRL2eRQVjQkKGqKF3SF9vZR/HnPullcV2E=
@@ -373,6 +373,8 @@ github.com/v3io/v3io-go v0.0.0-20191024084247-042df6b5ee40eb60996ab7f4e74ec9aa07
 github.com/v3io/v3io-go v0.0.0-20191024084247-042df6b5ee40eb60996ab7f4e74ec9aa07d996c4/go.mod h1:IFb6dJiyvJnOjXUoCoPJ5UViaYjgVYmqJb4fD1qDeLk=
 github.com/v3io/v3io-go v0.0.5-0.20191205125653-9003ae83f0b6 h1:+52DyMCjcWg6uXAlTe0KgbOsiQqUKrtL9tBPSERhyFg=
 github.com/v3io/v3io-go v0.0.5-0.20191205125653-9003ae83f0b6/go.mod h1:IFb6dJiyvJnOjXUoCoPJ5UViaYjgVYmqJb4fD1qDeLk=
+github.com/v3io/v3io-go v0.0.7-0.20200216132233-3b52a325296d h1:OotbIx7+QYju2DlAAVxWz0QFzBicHLc47u9DJGpVUL4=
+github.com/v3io/v3io-go v0.0.7-0.20200216132233-3b52a325296d/go.mod h1:IFb6dJiyvJnOjXUoCoPJ5UViaYjgVYmqJb4fD1qDeLk=
 github.com/v3io/v3io-go-http v0.0.0-20190221115935-53e2b487c9a2 h1:NJc63wM25iS+ci5z7LVwjWD4QM0QpTQw/fovKzatss0=
 github.com/v3io/v3io-go-http v0.0.0-20190221115935-53e2b487c9a2/go.mod h1:GXYcR9MxgfbE3BJdkXki5EclvtS8Nxu2RQNLA8hMMog=
 github.com/v3io/v3io-go-http v0.0.0-20190415143924-cc2fbcde6663/go.mod h1:GXYcR9MxgfbE3BJdkXki5EclvtS8Nxu2RQNLA8hMMog=
@@ -399,6 +401,8 @@ github.com/v3io/v3io-tsdb v0.9.12-3 h1:aGmz+q2XNmeypC9Zi/EWJE065SKbTsQdPH5DmEjdP
 github.com/v3io/v3io-tsdb v0.9.12-3/go.mod h1:Z6qZrj8Cb1CCLWfgk/166QM0oaUzdwMJ9G39shhUg6k=
 github.com/v3io/v3io-tsdb v0.9.12-4 h1:30+842hOs9fU0Hgn6AoSDLwCcqdpyGPQ6XZ6rVYvtIw=
 github.com/v3io/v3io-tsdb v0.9.12-4/go.mod h1:Z6qZrj8Cb1CCLWfgk/166QM0oaUzdwMJ9G39shhUg6k=
+github.com/v3io/v3io-tsdb v0.9.12-5 h1:c2wuV3hi7fBVw9PhmlnwzmZ6c9dUmVmtE0aZs0BKJgg=
+github.com/v3io/v3io-tsdb v0.9.12-5/go.mod h1:F7qpSiNJnRAanBWWpEc6Uhx52PhfJPT90p65b9/XPFo=
 github.com/v3io/v3io-tsdb v0.9.12 h1:uzB3D2HIHtO47zL79jR1Rw0ajd8y8mSKCP4jbXcihGY=
 github.com/v3io/v3io-tsdb v0.9.12/go.mod h1:Z6qZrj8Cb1CCLWfgk/166QM0oaUzdwMJ9G39shhUg6k=
 github.com/v3io/v3io-tsdb v0.9.13 h1:beckhXVWGqgt0x4suvdsFrUKvT0Ius68bi8pF/U9CSk=
