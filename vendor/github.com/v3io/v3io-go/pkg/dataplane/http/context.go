@@ -7,22 +7,26 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"path"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/v3io/v3io-go/pkg/dataplane"
+	"github.com/v3io/v3io-go/pkg/dataplane/schemas/node/common"
 	"github.com/v3io/v3io-go/pkg/errors"
 
 	"github.com/nuclio/errors"
 	"github.com/nuclio/logger"
 	"github.com/valyala/fasthttp"
+	"zombiezen.com/go/capnproto2"
 )
 
 // TODO: Request should have a global pool
@@ -31,46 +35,34 @@ var requestID uint64
 type context struct {
 	logger           logger.Logger
 	requestChan      chan *v3io.Request
-	httpClient       *fasthttp.HostClient
+	httpClient       *fasthttp.Client
 	clusterEndpoints []string
 	numWorkers       int
 }
 
-func NewContext(parentLogger logger.Logger, newContextInput *v3io.NewContextInput) (v3io.Context, error) {
-	var hosts []string
-	var httpEndpointFound, httpsEndpointFound bool
-
-	if len(newContextInput.ClusterEndpoints) == 0 {
-		return nil, errors.New("Zero cluster endpoints provided")
+func NewClient(tlsConfig *tls.Config, dialTimeout time.Duration) *fasthttp.Client {
+	if tlsConfig == nil {
+		tlsConfig = &tls.Config{InsecureSkipVerify: true}
 	}
 
-	// iterate over endpoints which contain scheme
-	for _, clusterEndpoint := range newContextInput.ClusterEndpoints {
-
-		// Return a clearer error if an empty cluster endpoint is provided.
-		if clusterEndpoint == "" {
-			return nil, errors.New("Cluster endpoint may not be empty")
-		}
-
-		parsedClusterEndpoint, err := url.Parse(clusterEndpoint)
-		if err != nil {
-			return nil, err
-		}
-		switch parsedClusterEndpoint.Scheme {
-		case "http":
-			httpEndpointFound = true
-		case "https":
-			httpsEndpointFound = true
-		default:
-			return nil, errors.Errorf("Unsupported endpoint scheme: %s", parsedClusterEndpoint.Scheme)
-		}
-		hosts = append(hosts, parsedClusterEndpoint.Host)
+	if dialTimeout == 0 {
+		dialTimeout = fasthttp.DefaultDialTimeout
+	}
+	dialFunction := func(addr string) (net.Conn, error) {
+		return fasthttp.DialTimeout(addr, dialTimeout)
 	}
 
-	if httpEndpointFound && httpsEndpointFound {
-		return nil, errors.New("Cannot create a context with a mix of HTTP and HTTPS endpoints.")
+	return &fasthttp.Client{
+		TLSConfig: tlsConfig,
+		Dial:      dialFunction,
 	}
+}
 
+func NewDefaultClient() *fasthttp.Client {
+	return NewClient(nil, 0)
+}
+
+func NewContext(parentLogger logger.Logger, client *fasthttp.Client, newContextInput *v3io.NewContextInput) (v3io.Context, error) {
 	requestChanLen := newContextInput.RequestChanLen
 	if requestChanLen == 0 {
 		requestChanLen = 1024
@@ -81,29 +73,11 @@ func NewContext(parentLogger logger.Logger, newContextInput *v3io.NewContextInpu
 		numWorkers = 8
 	}
 
-	tlsConfig := newContextInput.TlsConfig
-	if tlsConfig == nil {
-		tlsConfig = &tls.Config{InsecureSkipVerify: true}
-	}
-
-	dialTimeout := newContextInput.DialTimeout
-	if dialTimeout == 0 {
-		dialTimeout = fasthttp.DefaultDialTimeout
-	}
-	dialFunction := func(addr string) (net.Conn, error) {
-		return fasthttp.DialTimeout(addMissingPort(addr, httpsEndpointFound), dialTimeout)
-	}
 	newContext := &context{
-		logger: parentLogger.GetChild("context.http"),
-		httpClient: &fasthttp.HostClient{
-			Addr:      strings.Join(hosts, ","),
-			IsTLS:     httpsEndpointFound,
-			TLSConfig: tlsConfig,
-			Dial:      dialFunction,
-		},
-		clusterEndpoints: newContextInput.ClusterEndpoints,
-		requestChan:      make(chan *v3io.Request, requestChanLen),
-		numWorkers:       numWorkers,
+		logger:      parentLogger.GetChild("context.http"),
+		httpClient:  client,
+		requestChan: make(chan *v3io.Request, requestChanLen),
+		numWorkers:  numWorkers,
 	}
 
 	for workerIndex := 0; workerIndex < numWorkers; workerIndex++ {
@@ -113,24 +87,11 @@ func NewContext(parentLogger logger.Logger, newContextInput *v3io.NewContextInpu
 	return newContext, nil
 }
 
-// Code from fasthttp library https://github.com/valyala/fasthttp/blob/ea427d2f448aa8abc0b139f638e80184d4b23d9d/client.go#L1596
-// For some reason, this code is skipped when a custom dial function is provided.
-func addMissingPort(addr string, isTLS bool) string {
-	n := strings.Index(addr, ":")
-	if n >= 0 {
-		return addr
-	}
-	port := 80
-	if isTLS {
-		port = 443
-	}
-	return fmt.Sprintf("%s:%d", addr, port)
-}
-
 // create a new session
 func (c *context) NewSession(newSessionInput *v3io.NewSessionInput) (v3io.Session, error) {
 	return newSession(c.logger,
 		c,
+		newSessionInput.URL,
 		newSessionInput.Username,
 		newSessionInput.Password,
 		newSessionInput.AccessKey)
@@ -166,15 +127,34 @@ func (c *context) GetContainerContents(getContainerContentsInput *v3io.GetContai
 func (c *context) GetContainerContentsSync(getContainerContentsInput *v3io.GetContainerContentsInput) (*v3io.Response, error) {
 	getContainerContentOutput := v3io.GetContainerContentsOutput{}
 
-	query := ""
+	var queryBuilder strings.Builder
 	if getContainerContentsInput.Path != "" {
-		query += "prefix=" + getContainerContentsInput.Path
+		queryBuilder.WriteString("prefix=")
+		queryBuilder.WriteString(getContainerContentsInput.Path)
+	}
+
+	if getContainerContentsInput.DirectoriesOnly {
+		queryBuilder.WriteString("&prefix-only=1")
+	}
+
+	if getContainerContentsInput.GetAllAttributes {
+		queryBuilder.WriteString("&prefix-info=1")
+	}
+
+	if getContainerContentsInput.Marker != "" {
+		queryBuilder.WriteString("&marker=")
+		queryBuilder.WriteString(getContainerContentsInput.Marker)
+	}
+
+	if getContainerContentsInput.Limit > 0 {
+		queryBuilder.WriteString("&max-keys=")
+		queryBuilder.WriteString(strconv.Itoa(getContainerContentsInput.Limit))
 	}
 
 	return c.sendRequestAndXMLUnmarshal(&getContainerContentsInput.DataPlaneInput,
 		http.MethodGet,
 		"",
-		query,
+		queryBuilder.String(),
 		nil,
 		nil,
 		&getContainerContentOutput)
@@ -185,6 +165,11 @@ func (c *context) GetItem(getItemInput *v3io.GetItemInput,
 	context interface{},
 	responseChan chan *v3io.Response) (*v3io.Request, error) {
 	return c.sendRequestToWorker(getItemInput, context, responseChan)
+}
+
+type attributeValuesSection struct {
+	accumulatedPreviousSectionsLength int
+	data                              node_common_capnp.VnObjectAttributeValuePtr_List
 }
 
 // GetItemSync
@@ -241,8 +226,14 @@ func (c *context) GetItems(getItemsInput *v3io.GetItemsInput,
 func (c *context) GetItemsSync(getItemsInput *v3io.GetItemsInput) (*v3io.Response, error) {
 
 	// create GetItem Body
-	body := map[string]interface{}{
-		"AttributesToGet": strings.Join(getItemsInput.AttributeNames, ","),
+	body := map[string]interface{}{}
+
+	if len(getItemsInput.AttributeNames) > 0 {
+		body["AttributesToGet"] = strings.Join(getItemsInput.AttributeNames, ",")
+	}
+
+	if getItemsInput.TableName != "" {
+		body["TableName"] = getItemsInput.TableName
 	}
 
 	if getItemsInput.Filter != "" {
@@ -283,7 +274,7 @@ func (c *context) GetItemsSync(getItemsInput *v3io.GetItemsInput) (*v3io.Respons
 		"PUT",
 		getItemsInput.Path,
 		"",
-		getItemsHeaders,
+		getItemsHeadersCapnp,
 		marshalledBody,
 		false)
 
@@ -291,47 +282,22 @@ func (c *context) GetItemsSync(getItemsInput *v3io.GetItemsInput) (*v3io.Respons
 		return nil, err
 	}
 
-	c.logger.DebugWithCtx(getItemsInput.Ctx, "Body", "body", string(response.Body()))
+	contentType := string(response.HeaderPeek("Content-Type"))
 
-	getItemsResponse := struct {
-		Items            []map[string]map[string]interface{}
-		NextMarker       string
-		LastItemIncluded string
-	}{}
-
-	// unmarshal the body into an ad hoc structure
-	err = json.Unmarshal(response.Body(), &getItemsResponse)
-	if err != nil {
-		return nil, err
-	}
-
-	//validate getItems response to avoid infinite loop
-	if getItemsResponse.LastItemIncluded != "TRUE" && (getItemsResponse.NextMarker == "" || getItemsResponse.NextMarker == getItemsInput.Marker) {
-		errMsg := fmt.Sprintf("Invalid getItems response: lastItemIncluded=false and nextMarker='%s', "+
-			"startMarker='%s', probably due to object size bigger than 2M. Query is: %+v", getItemsResponse.NextMarker, getItemsInput.Marker, getItemsInput)
-		c.logger.Warn(errMsg)
-	}
-
-	getItemsOutput := v3io.GetItemsOutput{
-		NextMarker: getItemsResponse.NextMarker,
-		Last:       getItemsResponse.LastItemIncluded == "TRUE",
-	}
-
-	// iterate through the items and decode them
-	for _, typedItem := range getItemsResponse.Items {
-
-		item, err := c.decodeTypedAttributes(typedItem)
-		if err != nil {
-			return nil, err
+	if contentType != "application/octet-capnp" {
+		c.logger.DebugWithCtx(getItemsInput.Ctx, "Body", "body", string(response.Body()))
+		response.Output, err = c.getItemsParseJSONResponse(response, getItemsInput)
+	} else {
+		var withWildcard bool
+		for _, attributeName := range getItemsInput.AttributeNames {
+			if attributeName == "*" || attributeName == "**" {
+				withWildcard = true
+				break
+			}
 		}
-
-		getItemsOutput.Items = append(getItemsOutput.Items, item)
+		response.Output, err = c.getItemsParseCAPNPResponse(response, withWildcard)
 	}
-
-	// attach the output to the response
-	response.Output = &getItemsOutput
-
-	return response, nil
+	return response, err
 }
 
 // PutItem
@@ -343,6 +309,12 @@ func (c *context) PutItem(putItemInput *v3io.PutItemInput,
 
 // PutItemSync
 func (c *context) PutItemSync(putItemInput *v3io.PutItemInput) error {
+	var body map[string]interface{}
+	if putItemInput.UpdateMode != "" {
+		body = map[string]interface{}{
+			"UpdateMode": putItemInput.UpdateMode,
+		}
+	}
 
 	// prepare the query path
 	_, err := c.putItem(&putItemInput.DataPlaneInput,
@@ -351,7 +323,7 @@ func (c *context) PutItemSync(putItemInput *v3io.PutItemInput) error {
 		putItemInput.Attributes,
 		putItemInput.Condition,
 		putItemHeaders,
-		nil)
+		body)
 
 	return err
 }
@@ -424,6 +396,10 @@ func (c *context) UpdateItemSync(updateItemInput *v3io.UpdateItemInput) error {
 			"UpdateMode": "CreateOrReplaceAttributes",
 		}
 
+		if updateItemInput.UpdateMode != "" {
+			body["UpdateMode"] = updateItemInput.UpdateMode
+		}
+
 		_, err = c.putItem(&updateItemInput.DataPlaneInput,
 			updateItemInput.Path,
 			putItemFunctionName,
@@ -439,7 +415,8 @@ func (c *context) UpdateItemSync(updateItemInput *v3io.UpdateItemInput) error {
 			updateItemFunctionName,
 			*updateItemInput.Expression,
 			updateItemInput.Condition,
-			updateItemHeaders)
+			updateItemHeaders,
+			updateItemInput.UpdateMode)
 	}
 
 	return err
@@ -775,12 +752,18 @@ func (c *context) updateItemWithExpression(dataPlaneInput *v3io.DataPlaneInput,
 	functionName string,
 	expression string,
 	condition string,
-	headers map[string]string) (*v3io.Response, error) {
+	headers map[string]string,
+	updateMode string) (*v3io.Response, error) {
 
 	body := map[string]interface{}{
 		"UpdateExpression": expression,
 		"UpdateMode":       "CreateOrReplaceAttributes",
 	}
+
+	if updateMode != "" {
+		body["UpdateMode"] = updateMode
+	}
+
 
 	if condition != "" {
 		body["ConditionExpression"] = condition
@@ -846,7 +829,7 @@ func (c *context) sendRequest(dataPlaneInput *v3io.DataPlaneInput,
 	request := fasthttp.AcquireRequest()
 	response := c.allocateResponse()
 
-	uri, err := c.buildRequestURI(dataPlaneInput.ContainerName, query, path)
+	uri, err := c.buildRequestURI(dataPlaneInput.URL, dataPlaneInput.ContainerName, query, path)
 	if err != nil {
 		return nil, err
 	}
@@ -898,7 +881,12 @@ func (c *context) sendRequest(dataPlaneInput *v3io.DataPlaneInput,
 
 	// make sure we got expected status
 	if !success {
-		err = v3ioerrors.NewErrorWithStatusCode(fmt.Errorf("Failed %s with status %d", method, statusCode), statusCode)
+		var re = regexp.MustCompile(".*X-V3io-Session-Key:.*")
+		sanitizedRequest := re.ReplaceAllString(request.String(), "X-V3io-Session-Key: SANITIZED")
+		err = v3ioerrors.NewErrorWithStatusCode(
+			fmt.Errorf("Expected a 2xx response status code: %s\nRequest details:\n%s",
+				response.HTTPResponse.String(), sanitizedRequest),
+			statusCode)
 		goto cleanup
 	}
 
@@ -922,8 +910,8 @@ cleanup:
 	return response, nil
 }
 
-func (c *context) buildRequestURI(containerName string, query string, pathStr string) (*url.URL, error) {
-	uri, err := url.Parse(c.clusterEndpoints[0])
+func (c *context) buildRequestURI(urlString string, containerName string, query string, pathStr string) (*url.URL, error) {
+	uri, err := url.Parse(urlString)
 	if err != nil {
 		return nil, errors.Wrapf(err, "Failed to parse cluster endpoint URL %s", c.clusterEndpoints[0])
 	}
@@ -931,7 +919,7 @@ func (c *context) buildRequestURI(containerName string, query string, pathStr st
 	if strings.HasSuffix(pathStr, "/") {
 		uri.Path += "/" // retain trailing slash
 	}
-	uri.RawQuery = query
+	uri.RawQuery = strings.ReplaceAll(query, " ", "%20")
 	return uri, nil
 }
 
@@ -949,7 +937,7 @@ func (c *context) encodeTypedAttributes(attributes map[string]interface{}) (map[
 		typedAttributes[attributeName] = make(map[string]interface{})
 		switch value := attributeValue.(type) {
 		default:
-			return nil, fmt.Errorf("Unexpected attribute type for %s: %T", attributeName, reflect.TypeOf(attributeValue))
+			return nil, fmt.Errorf("unexpected attribute type for %s: %T", attributeName, reflect.TypeOf(attributeValue))
 		case int:
 			typedAttributes[attributeName]["N"] = strconv.Itoa(value)
 		case int64:
@@ -963,6 +951,9 @@ func (c *context) encodeTypedAttributes(attributes map[string]interface{}) (map[
 			typedAttributes[attributeName]["B"] = base64.StdEncoding.EncodeToString(value)
 		case bool:
 			typedAttributes[attributeName]["BOOL"] = value
+		case time.Time:
+			nanos := value.UnixNano()
+			typedAttributes[attributeName]["TS"] = fmt.Sprintf("%v:%v", nanos/1000000000, nanos%1000000000)
 		}
 	}
 
@@ -993,7 +984,7 @@ func (c *context) decodeTypedAttributes(typedAttributes map[string]map[string]in
 				// try float
 				floatValue, err := strconv.ParseFloat(numberValue, 64)
 				if err != nil {
-					return nil, fmt.Errorf("Value for %s is not int or float: %s", attributeName, numberValue)
+					return nil, fmt.Errorf("value for %s is not int or float: %s", attributeName, numberValue)
 				}
 
 				// save as float
@@ -1025,6 +1016,28 @@ func (c *context) decodeTypedAttributes(typedAttributes map[string]map[string]in
 			}
 
 			attributes[attributeName] = boolValue
+		} else if value, ok := typedAttributeValue["TS"]; ok {
+			timestampValue, ok := value.(string)
+			if !ok {
+				return nil, typeError(attributeName, "TS", value)
+			}
+
+			timeParts := strings.Split(timestampValue, ":")
+			if len(timeParts) != 2 {
+				return nil, fmt.Errorf("incorrect format of timestamp value: %v", timestampValue)
+			}
+
+			seconds, err := strconv.ParseInt(timeParts[0], 10, 64)
+			if err != nil {
+				return nil, err
+			}
+			nanos, err := strconv.ParseInt(timeParts[1], 10, 64)
+			if err != nil {
+				return nil, err
+			}
+			timeValue := time.Unix(seconds, nanos)
+
+			attributes[attributeName] = timeValue
 		}
 	}
 
@@ -1115,4 +1128,220 @@ func (c *context) workerEntry(workerIndex int) {
 		// write to response channel
 		request.ResponseChan <- &request.RequestResponse.Response
 	}
+}
+
+func readAllCapnpMessages(reader io.Reader) []*capnp.Message {
+	var capnpMessages []*capnp.Message
+	for {
+		msg, err := capnp.NewDecoder(reader).Decode()
+		if err != nil {
+			break
+		}
+		capnpMessages = append(capnpMessages, msg)
+	}
+	return capnpMessages
+}
+
+func getSectionAndIndex(values []attributeValuesSection, idx int) (section int, resIdx int) {
+	if len(values) == 1 {
+		return 0, idx
+	}
+	for i := 1; i < len(values); i++ {
+		if values[i].accumulatedPreviousSectionsLength > idx {
+			return i, idx - values[i-1].accumulatedPreviousSectionsLength
+		}
+	}
+	return 0, idx
+}
+
+func decodeCapnpAttributes(keyValues node_common_capnp.VnObjectItemsGetMappedKeyValuePair_List, values []attributeValuesSection, attributeNames []string) (map[string]interface{}, error) {
+	attributes := map[string]interface{}{}
+	for j := 0; j < keyValues.Len(); j++ {
+		attrPtr := keyValues.At(j)
+		valIdx := int(attrPtr.ValueMapIndex())
+		attrIdx := int(attrPtr.KeyMapIndex())
+
+		attributeName := attributeNames[attrIdx]
+		sectIdx, valIdx := getSectionAndIndex(values, valIdx)
+		value, err := values[sectIdx].data.At(valIdx).Value()
+		if err != nil {
+			return attributes, errors.Wrapf(err, "values[%d].data.At(%d).Value", sectIdx, valIdx)
+		}
+		switch value.Which() {
+		case node_common_capnp.ExtAttrValue_Which_qword:
+			attributes[attributeName] = int(value.Qword())
+		case node_common_capnp.ExtAttrValue_Which_uqword:
+			attributes[attributeName] = int(value.Uqword())
+		case node_common_capnp.ExtAttrValue_Which_blob:
+			attributes[attributeName], err = value.Blob()
+			if err != nil {
+				return attributes, errors.Wrapf(err, "unable to get value of BLOB attribute '%s'", attributeName)
+			}
+		case node_common_capnp.ExtAttrValue_Which_str:
+			attributes[attributeName], err = value.Str()
+			if err != nil {
+				return attributes, errors.Wrapf(err, "unable to get value of String attribute '%s'", attributeName)
+			}
+		case node_common_capnp.ExtAttrValue_Which_dfloat:
+			attributes[attributeName] = value.Dfloat()
+		case node_common_capnp.ExtAttrValue_Which_boolean:
+			attributes[attributeName] = value.Boolean()
+		case node_common_capnp.ExtAttrValue_Which_time:
+			t, err := value.Time()
+			if err != nil {
+				return nil, err
+			}
+			attributes[attributeName] = time.Unix(t.TvSec(), t.TvNsec())
+		case node_common_capnp.ExtAttrValue_Which_notExists:
+			continue // skip
+		default:
+			return attributes, errors.Errorf("getItemsCapnp: %s type for %s attribute is not expected", value.Which().String(), attributeName)
+		}
+	}
+	return attributes, nil
+}
+
+func (c *context) getItemsParseJSONResponse(response *v3io.Response, getItemsInput *v3io.GetItemsInput) (*v3io.GetItemsOutput, error) {
+
+	getItemsResponse := struct {
+		Items            []map[string]map[string]interface{}
+		NextMarker       string
+		LastItemIncluded string
+	}{}
+
+	// unmarshal the body into an ad hoc structure
+	err := json.Unmarshal(response.Body(), &getItemsResponse)
+	if err != nil {
+		return nil, err
+	}
+
+	//validate getItems response to avoid infinite loop
+	if getItemsResponse.LastItemIncluded != "TRUE" && (getItemsResponse.NextMarker == "" || getItemsResponse.NextMarker == getItemsInput.Marker) {
+		errMsg := fmt.Sprintf("Invalid getItems response: lastItemIncluded=false and nextMarker='%s', "+
+			"startMarker='%s', probably due to object size bigger than 2M. Query is: %+v", getItemsResponse.NextMarker, getItemsInput.Marker, getItemsInput)
+		c.logger.Warn(errMsg)
+	}
+
+	getItemsOutput := v3io.GetItemsOutput{
+		NextMarker: getItemsResponse.NextMarker,
+		Last:       getItemsResponse.LastItemIncluded == "TRUE",
+	}
+
+	// iterate through the items and decode them
+	for _, typedItem := range getItemsResponse.Items {
+
+		item, err := c.decodeTypedAttributes(typedItem)
+		if err != nil {
+			return nil, err
+		}
+
+		getItemsOutput.Items = append(getItemsOutput.Items, item)
+	}
+	// attach the output to the response
+	return &getItemsOutput, nil
+}
+
+func (c *context) getItemsParseCAPNPResponse(response *v3io.Response, withWildcard bool) (*v3io.GetItemsOutput, error) {
+	responseBodyReader := bytes.NewReader(response.Body())
+	capnpSections := readAllCapnpMessages(responseBodyReader)
+	if len(capnpSections) < 2 {
+		return nil, errors.Errorf("getItemsCapnp: Got only %v capnp sections. Expecting at least 2", len(capnpSections))
+	}
+	cookie := string(response.HeaderPeek("X-v3io-cookie"))
+	getItemsOutput := v3io.GetItemsOutput{
+		NextMarker: cookie,
+		Last:       len(cookie) == 0,
+	}
+	if len(capnpSections) < 2 {
+		return nil, errors.Errorf("getItemsCapnp: Got only %v capnp sections. Expecting at least 2", len(capnpSections))
+	}
+
+	metadataPayload, err := node_common_capnp.ReadRootVnObjectItemsGetResponseMetadataPayload(capnpSections[len(capnpSections)-1])
+	if err != nil {
+		return nil, errors.Wrap(err, "ReadRootVnObjectItemsGetResponseMetadataPayload")
+	}
+	//Keys
+	attributeMap, err := metadataPayload.KeyMap()
+	if err != nil {
+		return nil, errors.Wrap(err, "metadataPayload.KeyMap")
+	}
+	attributeMapNames, err := attributeMap.Names()
+	if err != nil {
+		return nil, errors.Wrap(err, "attributeMap.Names")
+	}
+	attributeNamesPtr, err := attributeMapNames.Arr()
+	if err != nil {
+		return nil, errors.Wrap(err, "attributeMapNames.Arr")
+	}
+	//Values
+	valueMap, err := metadataPayload.ValueMap()
+	if err != nil {
+		return nil, errors.Wrap(err, "metadataPayload.ValueMap")
+	}
+	values, err := valueMap.Values()
+	if err != nil {
+		return nil, errors.Wrap(err, "valueMap.Values")
+	}
+
+	// Items
+	items, err := metadataPayload.Items()
+	if err != nil {
+		return nil, errors.Wrap(err, "metadataPayload.Items")
+	}
+	valuesSections := make([]attributeValuesSection, len(capnpSections)-1)
+
+	accLength := 0
+	//Additional data sections "in between"
+	for capnpSectionIndex := 1; capnpSectionIndex < len(capnpSections)-1; capnpSectionIndex++ {
+		data, err := node_common_capnp.ReadRootVnObjectAttributeValueMap(capnpSections[capnpSectionIndex])
+		if err != nil {
+			return nil, errors.Wrap(err, "node_common_capnp.ReadRootVnObjectAttributeValueMap")
+		}
+		dv, err := data.Values()
+		if err != nil {
+			return nil, errors.Wrap(err, "data.Values")
+		}
+		accLength = accLength + dv.Len()
+		valuesSections[capnpSectionIndex-1].data = dv
+		valuesSections[capnpSectionIndex-1].accumulatedPreviousSectionsLength = accLength
+	}
+	accLength = accLength + values.Len()
+	valuesSections[len(capnpSections)-2].data = values
+	valuesSections[len(capnpSections)-2].accumulatedPreviousSectionsLength = accLength
+
+	//Read in all the attribute names
+	attributeNamesNumber := attributeNamesPtr.Len()
+	attributeNames := make([]string, attributeNamesNumber)
+	for attributeIndex := 0; attributeIndex < attributeNamesNumber; attributeIndex++ {
+		attributeNames[attributeIndex], err = attributeNamesPtr.At(attributeIndex).Str()
+		if err != nil {
+			return nil, errors.Wrapf(err, "attributeNamesPtr.At(%d) size %d", attributeIndex, attributeNamesNumber)
+		}
+	}
+
+	// iterate through the items and decode them
+	for itemIndex := 0; itemIndex < items.Len(); itemIndex++ {
+		itemPtr := items.At(itemIndex)
+		item, err := itemPtr.Item()
+		if err != nil {
+			return nil, errors.Wrap(err, "itemPtr.Item")
+		}
+		itemAttributes, err := item.Attrs()
+		if err != nil {
+			return nil, errors.Wrap(err, "item.Attrs")
+		}
+		ditem, err := decodeCapnpAttributes(itemAttributes, valuesSections, attributeNames)
+		if err != nil {
+			return nil, errors.Wrap(err, "decodeCapnpAttributes")
+		}
+		if withWildcard {
+			name, err := item.Name()
+			if err != nil {
+				return nil, errors.Wrap(err, "item.Name")
+			}
+			ditem["__name"] = name
+		}
+		getItemsOutput.Items = append(getItemsOutput.Items, ditem)
+	}
+	return &getItemsOutput, nil
 }

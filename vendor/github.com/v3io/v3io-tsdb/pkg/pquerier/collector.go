@@ -66,7 +66,11 @@ func mainCollector(ctx *selectQueryContext, responseChannel chan *qryResults) {
 
 	for res := range responseChannel {
 		if res.IsRawQuery() {
-			rawCollector(ctx, res)
+			err := rawCollector(ctx, res)
+			if err != nil {
+				ctx.errorChannel <- err
+				return
+			}
 		} else {
 			err := res.frame.addMetricIfNotExist(res.name, ctx.getResultBucketsSize(), res.IsServerAggregates())
 			if err != nil {
@@ -76,6 +80,7 @@ func mainCollector(ctx *selectQueryContext, responseChannel chan *qryResults) {
 			}
 			lsetAttr, _ := res.fields[config.LabelSetAttrName].(string)
 			lset, _ := utils.LabelsFromString(lsetAttr)
+			lset = append(lset, utils.Label{Name: config.MetricNameAttrName, Value: res.name})
 			currentResultHash := lset.Hash()
 
 			// Aggregating cross series aggregates, only supported over raw data.
@@ -103,20 +108,35 @@ func mainCollector(ctx *selectQueryContext, responseChannel chan *qryResults) {
 	}
 }
 
-func rawCollector(ctx *selectQueryContext, res *qryResults) {
+func rawCollector(ctx *selectQueryContext, res *qryResults) error {
 	ctx.logger.Debug("using Raw Collector for metric %v", res.name)
-	frameIndex, ok := res.frame.columnByName[res.name]
-	if ok {
-		res.frame.rawColumns[frameIndex].(*V3ioRawSeries).AddChunks(res)
-	} else {
-		series, err := NewRawSeries(res, ctx.logger.GetChild("v3ioRawSeries"))
-		if err != nil {
-			ctx.errorChannel <- err
-			return
+
+	if res.frame.isWildcardSelect {
+		columnIndex, ok := res.frame.columnByName[res.name]
+		if ok {
+			res.frame.rawColumns[columnIndex].(*V3ioRawSeries).AddChunks(res)
+		} else {
+			series, err := NewRawSeries(res, ctx.logger.GetChild("v3ioRawSeries"))
+			if err != nil {
+				return err
+			}
+			res.frame.rawColumns = append(res.frame.rawColumns, series)
+			res.frame.columnByName[res.name] = len(res.frame.rawColumns) - 1
 		}
-		res.frame.rawColumns = append(res.frame.rawColumns, series)
-		res.frame.columnByName[res.name] = len(res.frame.rawColumns) - 1
+	} else {
+		columnIndex := res.frame.columnByName[res.name]
+		rawColumn := res.frame.rawColumns[columnIndex]
+		if rawColumn != nil {
+			res.frame.rawColumns[columnIndex].(*V3ioRawSeries).AddChunks(res)
+		} else {
+			series, err := NewRawSeries(res, ctx.logger.GetChild("v3ioRawSeries"))
+			if err != nil {
+				return err
+			}
+			res.frame.rawColumns[columnIndex] = series
+		}
 	}
+	return nil
 }
 
 func aggregateClientAggregates(ctx *selectQueryContext, res *qryResults) {
@@ -203,7 +223,7 @@ func downsampleRawData(ctx *selectQueryContext, res *qryResults,
 			if it.Seek(currCellTime) {
 				t, v := it.At()
 				if t == currCellTime {
-					_ = res.frame.setDataAt(col.Name(), int(currCell), v)
+					_ = res.frame.setDataAt(col.Name(), currCell, v)
 				} else {
 					prevT, prevV := it.PeakBack()
 
@@ -216,7 +236,7 @@ func downsampleRawData(ctx *selectQueryContext, res *qryResults,
 
 					// Check if the interpolation was successful in terms of exceeding tolerance
 					if !(interpolatedT == 0 && interpolatedV == 0) {
-						_ = res.frame.setDataAt(col.Name(), int(currCell), interpolatedV)
+						_ = res.frame.setDataAt(col.Name(), currCell, interpolatedV)
 					}
 				}
 			}
@@ -229,7 +249,10 @@ func downsampleRawData(ctx *selectQueryContext, res *qryResults,
 
 func aggregateClientAggregatesCrossSeries(ctx *selectQueryContext, res *qryResults, previousPartitionLastTime int64, previousPartitionLastValue float64) (int64, float64, error) {
 	ctx.logger.Debug("using Client Aggregates Collector for metric %v", res.name)
-	it := newRawChunkIterator(res, ctx.logger).(*RawChunkIterator)
+	it, ok := newRawChunkIterator(res, ctx.logger).(*RawChunkIterator)
+	if !ok {
+		return previousPartitionLastTime, previousPartitionLastValue, nil
+	}
 
 	var previousPartitionEndBucket int
 	if previousPartitionLastTime != 0 {
@@ -248,7 +271,7 @@ func aggregateClientAggregatesCrossSeries(ctx *selectQueryContext, res *qryResul
 			if t == currBucketTime {
 				for _, col := range res.frame.columns {
 					if col.GetColumnSpec().metric == res.name {
-						_ = res.frame.setDataAt(col.Name(), int(currBucket), v)
+						_ = res.frame.setDataAt(col.Name(), currBucket, v)
 					}
 				}
 			} else {
@@ -264,7 +287,7 @@ func aggregateClientAggregatesCrossSeries(ctx *selectQueryContext, res *qryResul
 					if col.GetColumnSpec().metric == res.name {
 						interpolatedT, interpolatedV := col.GetInterpolationFunction()(prevT, t, currBucketTime, prevV, v)
 						if !(interpolatedT == 0 && interpolatedV == 0) {
-							_ = res.frame.setDataAt(col.Name(), int(currBucket), interpolatedV)
+							_ = res.frame.setDataAt(col.Name(), currBucket, interpolatedV)
 						}
 					}
 				}
