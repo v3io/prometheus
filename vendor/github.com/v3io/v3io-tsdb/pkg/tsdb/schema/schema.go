@@ -13,7 +13,8 @@ import (
 )
 
 const (
-	Version = 3
+	Version          = 4
+	MaxV3ioArraySize = 130000
 )
 
 func NewSchema(v3ioCfg *config.V3ioConfig, samplesIngestionRate, aggregationGranularity, aggregatesList string, crossLabelSets string) (*config.Schema, error) {
@@ -36,10 +37,6 @@ func newSchema(samplesIngestionRate, aggregationGranularity, aggregatesList stri
 		return nil, errors.Wrapf(err, "Invalid samples ingestion rate (%s).", samplesIngestionRate)
 	}
 
-	if err := validateAggregatesGranularity(aggregationGranularity); err != nil {
-		return nil, errors.Wrapf(err, "Failed to parse aggregation granularity '%s'.", aggregationGranularity)
-	}
-
 	chunkInterval, partitionInterval, err := calculatePartitionAndChunkInterval(rateInHours, minChunkSize, maxChunkSize, maxSampleSize, maxPartitionSize)
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to calculate the chunk interval.")
@@ -50,18 +47,26 @@ func newSchema(samplesIngestionRate, aggregationGranularity, aggregatesList stri
 		return nil, errors.Wrapf(err, "Failed to parse aggregates list '%s'.", aggregatesList)
 	}
 
+	if err := validateAggregatesGranularity(aggregationGranularity, partitionInterval, len(aggregates) > 0); err != nil {
+		return nil, err
+	}
+
 	parsedCrossLabelSets := aggregate.ParseCrossLabelSets(crossLabelSets)
 
 	if len(parsedCrossLabelSets) > 0 && len(aggregates) == 0 {
-		return nil, errors.New("Cross label aggregations must be used in conjunction with aggregations.")
+		return nil, errors.New("Cross label aggregations must be used in conjunction with aggregations")
+	}
+
+	if len(aggregates) == 0 {
+		aggregates = strings.Split(config.DefaultAggregates, ",")
 	}
 
 	defaultRollup := config.Rollup{
-		Aggregates:             []string{},
+		Aggregates:             aggregates,
 		AggregationGranularity: aggregationGranularity,
 		StorageClass:           config.DefaultStorageClass,
-		SampleRetention:        sampleRetention,                  //TODO: make configurable
-		LayerRetentionTime:     config.DefaultLayerRetentionTime, //TODO: make configurable
+		SampleRetention:        sampleRetention, //TODO: make configurable
+		LayerRetentionTime:     config.DefaultLayerRetentionTime,
 	}
 
 	var preaggregates []config.PreAggregate
@@ -81,10 +86,6 @@ func newSchema(samplesIngestionRate, aggregationGranularity, aggregatesList stri
 		PartitionerInterval:  partitionInterval,
 		ChunckerInterval:     chunkInterval,
 		PreAggregates:        preaggregates,
-	}
-
-	if len(aggregates) == 0 {
-		aggregates = strings.Split(config.DefaultAggregates, ",")
 	}
 
 	fields, err := aggregate.SchemaFieldFromString(aggregates, "v")
@@ -119,13 +120,13 @@ func calculatePartitionAndChunkInterval(rateInHours, minChunkSize, maxChunkSize,
 
 	chunkInterval := maxNumberOfEventsPerChunk / rateInHours
 	if chunkInterval == 0 {
-		return "", "", fmt.Errorf("The samples ingestion rate (%v/h) is too high.", rateInHours)
+		return "", "", fmt.Errorf("the samples ingestion rate (%v/h) is too high", rateInHours)
 	}
 
 	// Make sure the expected chunk size is greater then the supported minimum.
 	if chunkInterval < minNumberOfEventsPerChunk/rateInHours {
 		return "", "", fmt.Errorf(
-			"The calculated chunk size is smaller than the minimum: samples ingestion rate = %v/h, calculated chunk interval = %v, minimum size = %v",
+			"the calculated chunk size is smaller than the minimum: samples ingestion rate = %v/h, calculated chunk interval = %v, minimum size = %v",
 			rateInHours, chunkInterval, minChunkSize)
 	}
 
@@ -136,7 +137,7 @@ func calculatePartitionAndChunkInterval(rateInHours, minChunkSize, maxChunkSize,
 		numberOfChunksInPartition += 24
 	}
 	if numberOfChunksInPartition == 0 {
-		return "", "", errors.Errorf("The samples ingestion rate (%v/h) is too high - cannot fit a partition in a day interval with the calculated chunk size (%v).", rateInHours, chunkInterval)
+		return "", "", errors.Errorf("the samples ingestion rate (%v/h) is too high - cannot fit a partition in a day interval with the calculated chunk size (%v)", rateInHours, chunkInterval)
 	}
 
 	partitionInterval := numberOfChunksInPartition * chunkInterval
@@ -144,7 +145,7 @@ func calculatePartitionAndChunkInterval(rateInHours, minChunkSize, maxChunkSize,
 }
 
 func rateToHours(samplesIngestionRate string) (int, error) {
-	parsingError := errors.New(`Invalid samples ingestion rate. The rate must be of the format "[0-9]+/[smh]". For example, "12/m".`)
+	parsingError := errors.New(`Invalid samples ingestion rate. The rate must be of the format "[0-9]+/[smh]". For example, "12/m"`)
 
 	if len(samplesIngestionRate) < 3 {
 		return 0, parsingError
@@ -161,7 +162,7 @@ func rateToHours(samplesIngestionRate string) (int, error) {
 		return 0, errors.Wrap(err, parsingError.Error())
 	}
 	if i <= 0 {
-		return 0, fmt.Errorf("Invalid samples ingestion rate (%s). The rate cannot have a negative number of samples.", samplesIngestionRate)
+		return 0, fmt.Errorf("invalid samples ingestion rate (%s). The rate cannot have a negative number of samples", samplesIngestionRate)
 	}
 	switch last {
 	case 's':
@@ -175,15 +176,22 @@ func rateToHours(samplesIngestionRate string) (int, error) {
 	}
 }
 
-func validateAggregatesGranularity(aggregationGranularity string) error {
+func validateAggregatesGranularity(aggregationGranularity string, partitionInterval string, hasAggregates bool) error {
 	dayMillis := 24 * int64(time.Hour/time.Millisecond)
 	duration, err := utils.Str2duration(aggregationGranularity)
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "Failed to parse aggregation granularity '%s'.", aggregationGranularity)
 	}
 
 	if dayMillis%duration != 0 && duration%dayMillis != 0 {
-		return errors.New("The aggregation granularity should be a divisor or a dividend of 1 day. Examples: \"10m\"; \"30m\"; \"2h\".")
+		return errors.New("the aggregation granularity should be a divisor or a dividend of 1 day. Examples: \"10m\"; \"30m\"; \"2h\"")
+	}
+
+	if hasAggregates {
+		partitionIntervalDuration, _ := utils.Str2duration(partitionInterval) // safe to ignore error since we create 'partitionInterval'
+		if partitionIntervalDuration/duration > MaxV3ioArraySize {
+			return errors.New("the aggregation granularity is too close to the ingestion rate provided. Try increasing the granularity to get an aggregation performance impact")
+		}
 	}
 	return nil
 }

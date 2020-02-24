@@ -12,24 +12,27 @@ import (
 type session struct {
 	logger              logger.Logger
 	context             *context
+	url                 string
 	authenticationToken string
 	accessKey           string
 }
 
 func newSession(parentLogger logger.Logger,
 	context *context,
+	url string,
 	username string,
 	password string,
 	accessKey string) (v3io.Session, error) {
 
 	authenticationToken := ""
-	if username != "" && password != "" {
+	if username != "" && password != "" && accessKey == "" {
 		authenticationToken = GenerateAuthenticationToken(username, password)
 	}
 
 	return &session{
 		logger:              parentLogger.GetChild("session"),
 		context:             context,
+		url:                 url,
 		authenticationToken: authenticationToken,
 		accessKey:           accessKey,
 	}, nil
