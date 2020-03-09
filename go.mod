@@ -1,7 +1,6 @@
 module github.com/prometheus/prometheus
 
 require (
-	github.com/v3io/v3io-go v0.1.5-0.20200301152134-6880d30985de
 	contrib.go.opencensus.io/exporter/ocagent v0.4.9 // indirect
 	github.com/Azure/azure-sdk-for-go v23.2.0+incompatible
 	github.com/Azure/go-autorest v11.2.8+incompatible
@@ -85,6 +84,7 @@ require (
 	github.com/shurcooL/vfsgen v0.0.0-20180711163814-62bca832be04
 	github.com/smartystreets/goconvey v0.0.0-20190306220146-200a235640ff // indirect
 	github.com/stretchr/testify v1.4.0
+	github.com/v3io/v3io-go v0.1.5-0.20200301152134-6880d30985de // indirect
 	github.com/v3io/v3io-tsdb v0.9.16
 	go.opencensus.io v0.19.2 // indirect
 	golang.org/x/net v0.0.0-20190311183353-d8887717615a
