@@ -321,6 +321,7 @@ github.com/rcrowley/go-metrics v0.0.0-20181016184325-3113b8401b8a h1:9ZKAASQSHhD
 github.com/rcrowley/go-metrics v0.0.0-20181016184325-3113b8401b8a/go.mod h1:bCqnVzQkZxMG4s8nGwiZ5l3QUCyqpo9Y+/ZMZ9VjZe4=
 github.com/rlmcpherson/s3gof3r v0.5.0 h1:1izOJpTiohSibfOHuNyEA/yQnAirh05enzEdmhez43k=
 github.com/rlmcpherson/s3gof3r v0.5.0/go.mod h1:s7vv7SMDPInkitQMuZzH615G7yWHdrU2r/Go7Bo71Rs=
+github.com/rs/xid v1.1.0/go.mod h1:+uKXf+4Djp6Md1KODXJxgGQPKngRmWyn10oCKFzNHOQ=
 github.com/rubyist/circuitbreaker v2.2.1+incompatible h1:KUKd/pV8Geg77+8LNDwdow6rVCAYOp8+kHUyFvL6Mhk=
 github.com/rubyist/circuitbreaker v2.2.1+incompatible/go.mod h1:Ycs3JgJADPuzJDwffe12k6BZT8hxVi6lFK+gWYJLN4A=
 github.com/russross/blackfriday v1.5.2+incompatible/go.mod h1:JO/DiYxRf+HjHt06OyowR9PTA263kcR/rfWxYHBV53g=
@@ -379,6 +380,8 @@ github.com/v3io/v3io-go v0.0.5-0.20191205125653-9003ae83f0b6 h1:+52DyMCjcWg6uXAl
 github.com/v3io/v3io-go v0.0.5-0.20191205125653-9003ae83f0b6/go.mod h1:IFb6dJiyvJnOjXUoCoPJ5UViaYjgVYmqJb4fD1qDeLk=
 github.com/v3io/v3io-go v0.0.7-0.20200216132233-3b52a325296d h1:OotbIx7+QYju2DlAAVxWz0QFzBicHLc47u9DJGpVUL4=
 github.com/v3io/v3io-go v0.0.7-0.20200216132233-3b52a325296d/go.mod h1:IFb6dJiyvJnOjXUoCoPJ5UViaYjgVYmqJb4fD1qDeLk=
+github.com/v3io/v3io-go v0.1.5-0.20200301152134-6880d30985de h1:UcOuqrNG4DFs50f+RwxIcMOlWZZzzBQCe8hss6ZS3p0=
+github.com/v3io/v3io-go v0.1.5-0.20200301152134-6880d30985de/go.mod h1:D0W1tjsVgcp4xk3ZI2fjKTKaOpYJLewN1BPN0x2osO4=
 github.com/v3io/v3io-go-http v0.0.0-20190221115935-53e2b487c9a2 h1:NJc63wM25iS+ci5z7LVwjWD4QM0QpTQw/fovKzatss0=
 github.com/v3io/v3io-go-http v0.0.0-20190221115935-53e2b487c9a2/go.mod h1:GXYcR9MxgfbE3BJdkXki5EclvtS8Nxu2RQNLA8hMMog=
 github.com/v3io/v3io-go-http v0.0.0-20190415143924-cc2fbcde6663/go.mod h1:GXYcR9MxgfbE3BJdkXki5EclvtS8Nxu2RQNLA8hMMog=
