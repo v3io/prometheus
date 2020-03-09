@@ -1,6 +1,7 @@
 module github.com/prometheus/prometheus
 
 require (
+	github.com/v3io/v3io-go v0.1.5-0.20200301152134-6880d30985de
 	contrib.go.opencensus.io/exporter/ocagent v0.4.9 // indirect
 	github.com/Azure/azure-sdk-for-go v23.2.0+incompatible
 	github.com/Azure/go-autorest v11.2.8+incompatible
