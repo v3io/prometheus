@@ -31,7 +31,6 @@ require (
 	github.com/go-ole/go-ole v1.2.4 // indirect
 	github.com/go-sql-driver/mysql v1.4.1 // indirect
 	github.com/gogo/protobuf v1.2.0
-	github.com/golang/groupcache v0.0.0-20190129154638-5b532d6fd5ef // indirect
 	github.com/golang/snappy v0.0.0-20180518054509-2e65f85255db
 	github.com/google/gofuzz v0.0.0-20170612174753-24818f796faf // indirect
 	github.com/google/pprof v0.0.0-20180605153948-8b03ce837f34
@@ -85,7 +84,7 @@ require (
 	github.com/shurcooL/vfsgen v0.0.0-20180711163814-62bca832be04
 	github.com/smartystreets/goconvey v0.0.0-20190306220146-200a235640ff // indirect
 	github.com/stretchr/testify v1.4.0
-	github.com/v3io/v3io-tsdb v0.9.2
+	github.com/v3io/v3io-tsdb v0.9.16
 	go.opencensus.io v0.19.2 // indirect
 	golang.org/x/net v0.0.0-20190311183353-d8887717615a
 	golang.org/x/oauth2 v0.0.0-20190226205417-e64efc72b421
@@ -113,6 +112,6 @@ replace labix.org/v2/mgo => github.com/go-mgo/mgo v0.0.0-20180705113738-7446a034
 
 replace launchpad.net/gocheck => github.com/go-check/check v0.0.0-20180628173108-788fd78401277ebd861206a03c884797c6ec5541
 
-replace github.com/v3io/frames => github.com/v3io/frames v0.0.0-20190328123118-1dad1ff610509e7b087d9cd390ed1b452caecf15
+replace github.com/v3io/frames => github.com/v3io/frames v0.6.11-v0.9.16
 
-replace github.com/v3io/v3io-tsdb => github.com/v3io/v3io-tsdb v0.9.12-8
+replace github.com/v3io/v3io-tsdb => github.com/v3io/v3io-tsdb v0.9.16
