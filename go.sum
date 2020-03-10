@@ -426,7 +426,7 @@ github.com/v3io/v3io-tsdb v0.9.14 h1:H+e1VW/Lx2qAdkkX1iivDEywNK3PUtdFQi7xzrvW3zA
 github.com/v3io/v3io-tsdb v0.9.14/go.mod h1:Oqvn2Y3EDvz4eX5LW+YfHhv4ho30E2pg+4vebjqEJYE=
 github.com/v3io/v3io-tsdb v0.9.15 h1:iFZvF/pvg8C+bZe9xMcdUi0glKcr1EovUts5K/o16SU=
 github.com/v3io/v3io-tsdb v0.9.15/go.mod h1:hdeE2K5HLZsp2NL8VRK9vmMp7cZ2F8x3VoQB2Gr34MI=
-github.com/v3io/v3io-tsdb v0.9.16 h1:IFKZDD8TUAmh9AzQl8apU/ohIYNAqMVp/P7NV7OSFmY=
+github.com/v3io/v3io-tsdb v0.9.16 h1:alqskyyvPAjl/3YlV/Uy4y2le3Mf3BRutcArZcvRepQ=
 github.com/v3io/v3io-tsdb v0.9.16/go.mod h1:u0exEO2VYFbuOXbmAilimkoWztkvBuTbNMFysLm99ho=
 github.com/valyala/bytebufferpool v1.0.0 h1:GqA5TC/0021Y/b9FG4Oi9Mr3q7XYx6KllzawFIhcdPw=
 github.com/valyala/bytebufferpool v1.0.0/go.mod h1:6bBcMArwyJ5K/AmCkWv1jt77kVWyCJ6HpOuEn7z0Csc=
