@@ -345,7 +345,7 @@ func New(logger log.Logger, o *Options) *Handler {
 			fmt.Fprintf(w, "Prometheus is Unhealthy: still waiting on V3IO storage.\n")
 			return
 		}
-		schemaUrl := "http://" + path.Join(o.V3ioConfig.WebApiEndpoint, o.V3ioConfig.Container, o.V3ioConfig.TablePath, ".schema")
+		schemaUrl := "http://" + path.Join(o.V3ioConfig.WebAPIEndpoint, o.V3ioConfig.Container, o.V3ioConfig.TablePath, ".schema")
 		req, err := http.NewRequest("GET", schemaUrl, nil)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
