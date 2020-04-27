@@ -125,6 +125,7 @@ func (c *context) GetContainersSync(getContainersInput *v3io.GetContainersInput)
 		nil,
 		&v3io.GetContainersOutput{})
 }
+
 // GetClusterMD
 func (c *context) GetClusterMD(getClusterMDInput *v3io.GetClusterMDInput,
 	context interface{},
@@ -610,6 +611,25 @@ func (c *context) DescribeStreamSync(describeStreamInput *v3io.DescribeStreamInp
 	response.Output = &describeStreamOutput
 
 	return response, nil
+}
+
+// checkPathExists
+func (c *context) CheckPathExists(checkPathExistsInput *v3io.CheckPathExistsInput,
+	context interface{},
+	responseChan chan *v3io.Response) (*v3io.Request, error) {
+	return c.sendRequestToWorker(checkPathExistsInput, context, responseChan)
+}
+
+// checkPathExistsSync
+func (c *context) CheckPathExistsSync(checkPathExistsInput *v3io.CheckPathExistsInput) error {
+	_, err := c.sendRequest(&checkPathExistsInput.DataPlaneInput,
+		http.MethodHead,
+		checkPathExistsInput.Path,
+		"",
+		nil,
+		nil,
+		true)
+	return err
 }
 
 // DeleteStream
@@ -1226,6 +1246,8 @@ func (c *context) workerEntry(workerIndex int) {
 			response, err = c.GetContainerContentsSync(typedInput)
 		case *v3io.GetClusterMDInput:
 			response, err = c.GetClusterMDSync(typedInput)
+		case *v3io.CheckPathExistsInput:
+			err = c.CheckPathExistsSync(typedInput)
 		default:
 			c.logger.ErrorWith("Got unexpected request type", "type", reflect.TypeOf(request.Input).String())
 		}
