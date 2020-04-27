@@ -12,7 +12,7 @@ podTemplate(label: "${git_project}-${label}", inheritFrom: "jnlp-docker") {
         ]) {
             def TAG_VERSION
             def DOCKER_TAG_VERSION
-            pipelinex = library(identifier: 'pipelinex@shellc', retriever: modernSCM(
+            pipelinex = library(identifier: 'pipelinex@development', retriever: modernSCM(
                     [$class       : 'GitSCMSource',
                      credentialsId: git_deploy_user_private_key,
                      remote       : "git@github.com:iguazio/pipelinex.git"])).com.iguazio.pipelinex

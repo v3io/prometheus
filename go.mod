@@ -76,6 +76,7 @@ require (
 	github.com/prometheus/tsdb v0.6.1
 	github.com/rlmcpherson/s3gof3r v0.5.0 // indirect
 	github.com/rubyist/circuitbreaker v2.2.1+incompatible // indirect
+	github.com/russross/blackfriday v1.5.2 // indirect
 	github.com/samuel/go-zookeeper v0.0.0-20161028232340-1d7be4effb13
 	github.com/sasha-s/go-deadlock v0.2.0 // indirect
 	github.com/satori/go.uuid v1.2.0 // indirect
