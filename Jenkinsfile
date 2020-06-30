@@ -1,5 +1,5 @@
 label = "${UUID.randomUUID().toString()}"
-BUILD_FOLDER = "/go"
+BUILD_FOLDER = "/home/jenkins/go"
 git_project = "prometheus"
 git_project_user = "v3io"
 git_deploy_user_token = "iguazio-prod-git-user-token"
