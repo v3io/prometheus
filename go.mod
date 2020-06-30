@@ -112,6 +112,6 @@ replace labix.org/v2/mgo => github.com/go-mgo/mgo v0.0.0-20180705113738-7446a034
 
 replace launchpad.net/gocheck => github.com/go-check/check v0.0.0-20180628173108-788fd78401277ebd861206a03c884797c6ec5541
 
-replace github.com/v3io/frames => github.com/v3io/frames v0.7.12
+replace github.com/v3io/frames => github.com/v3io/frames v0.7.15
 
 replace github.com/v3io/v3io-tsdb => github.com/v3io/v3io-tsdb v0.10.4
