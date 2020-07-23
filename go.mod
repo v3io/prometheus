@@ -1,5 +1,7 @@
 module github.com/prometheus/prometheus
 
+go 1.14
+
 require (
 	contrib.go.opencensus.io/exporter/ocagent v0.4.9 // indirect
 	github.com/Azure/azure-sdk-for-go v23.2.0+incompatible
@@ -92,7 +94,7 @@ require (
 	golang.org/x/tools v0.0.0-20190312170243-e65039ee4138
 	google.golang.org/api v0.2.0
 	google.golang.org/genproto v0.0.0-20190307195333-5fe7a883aa19
-	google.golang.org/grpc v1.19.1
+	google.golang.org/grpc v1.20.0
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/fsnotify/fsnotify.v1 v1.3.0
 	gopkg.in/inf.v0 v0.9.1 // indirect
@@ -112,6 +114,6 @@ replace labix.org/v2/mgo => github.com/go-mgo/mgo v0.0.0-20180705113738-7446a034
 
 replace launchpad.net/gocheck => github.com/go-check/check v0.0.0-20180628173108-788fd78401277ebd861206a03c884797c6ec5541
 
-replace github.com/v3io/frames => github.com/v3io/frames v0.7.24
+replace github.com/v3io/frames => github.com/v3io/frames v0.7.30
 
-replace github.com/v3io/v3io-tsdb => github.com/v3io/v3io-tsdb v0.10.6
+replace github.com/v3io/v3io-tsdb => github.com/v3io/v3io-tsdb v0.10.8
