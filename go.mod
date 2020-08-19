@@ -116,4 +116,6 @@ replace launchpad.net/gocheck => github.com/go-check/check v0.0.0-20180628173108
 
 replace github.com/v3io/frames => github.com/v3io/frames v0.7.34
 
-replace github.com/v3io/v3io-tsdb => github.com/v3io/v3io-tsdb v0.10.10
+replace github.com/v3io/v3io-tsdb => github.com/v3io/v3io-tsdb v0.10.11
+
+replace google.golang.org/grpc => google.golang.org/grpc v1.19.1
