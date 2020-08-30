@@ -270,6 +270,8 @@ github.com/klauspost/cpuid
 ## explicit
 # github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515
 github.com/kr/logfmt
+# github.com/kr/pretty v0.2.1
+## explicit
 # github.com/lib/pq v1.0.0
 ## explicit
 # github.com/lightstep/lightstep-tracer-go v0.15.6
@@ -548,7 +550,7 @@ google.golang.org/appengine/urlfetch
 google.golang.org/genproto/googleapis/api/annotations
 google.golang.org/genproto/googleapis/rpc/status
 google.golang.org/genproto/protobuf/field_mask
-# google.golang.org/grpc v1.20.0
+# google.golang.org/grpc v1.20.0 => google.golang.org/grpc v1.19.1
 ## explicit
 google.golang.org/grpc
 google.golang.org/grpc/balancer
@@ -564,7 +566,6 @@ google.golang.org/grpc/encoding/proto
 google.golang.org/grpc/grpclog
 google.golang.org/grpc/internal
 google.golang.org/grpc/internal/backoff
-google.golang.org/grpc/internal/balancerload
 google.golang.org/grpc/internal/binarylog
 google.golang.org/grpc/internal/channelz
 google.golang.org/grpc/internal/envconfig
@@ -788,3 +789,4 @@ zombiezen.com/go/capnproto2/schemas
 # launchpad.net/gocheck => github.com/go-check/check v0.0.0-20180628173108-788fd78401277ebd861206a03c884797c6ec5541
 # github.com/v3io/frames => github.com/v3io/frames v0.7.36
 # github.com/v3io/v3io-tsdb => github.com/v3io/v3io-tsdb v0.10.12
+# google.golang.org/grpc => google.golang.org/grpc v1.19.1
