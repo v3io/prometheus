@@ -270,6 +270,8 @@ github.com/klauspost/cpuid
 ## explicit
 # github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515
 github.com/kr/logfmt
+# github.com/kr/pretty v0.2.1
+## explicit
 # github.com/lib/pq v1.0.0
 ## explicit
 # github.com/lightstep/lightstep-tracer-go v0.15.6
@@ -415,7 +417,7 @@ github.com/shurcooL/vfsgen
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/require
 github.com/stretchr/testify/suite
-# github.com/v3io/frames v0.7.33 => github.com/v3io/frames v0.7.34
+# github.com/v3io/frames v0.7.33 => github.com/v3io/frames v0.7.36
 github.com/v3io/frames
 github.com/v3io/frames/pb
 # github.com/v3io/v3io-go v0.1.9
@@ -423,7 +425,7 @@ github.com/v3io/v3io-go/pkg/dataplane
 github.com/v3io/v3io-go/pkg/dataplane/http
 github.com/v3io/v3io-go/pkg/dataplane/schemas/node/common
 github.com/v3io/v3io-go/pkg/errors
-# github.com/v3io/v3io-tsdb v0.10.10 => github.com/v3io/v3io-tsdb v0.10.11
+# github.com/v3io/v3io-tsdb v0.10.12 => github.com/v3io/v3io-tsdb v0.10.12
 ## explicit
 github.com/v3io/v3io-tsdb/internal/pkg/performance
 github.com/v3io/v3io-tsdb/pkg/aggregate
@@ -673,7 +675,7 @@ k8s.io/apimachinery/pkg/version
 k8s.io/apimachinery/pkg/watch
 k8s.io/apimachinery/third_party/forked/golang/json
 k8s.io/apimachinery/third_party/forked/golang/reflect
-# k8s.io/client-go v2.0.0-alpha.0.0.20181121191925-a47917edff34+incompatible
+# k8s.io/client-go v0.0.0-20181121191925-a47917edff34
 ## explicit
 k8s.io/client-go/discovery
 k8s.io/client-go/discovery/fake
@@ -785,6 +787,6 @@ zombiezen.com/go/capnproto2/schemas
 # k8s.io/klog => github.com/simonpasquier/klog-gokit v0.1.0
 # labix.org/v2/mgo => github.com/go-mgo/mgo v0.0.0-20180705113738-7446a0344b7872c067b3d6e1b7642571eafbae17
 # launchpad.net/gocheck => github.com/go-check/check v0.0.0-20180628173108-788fd78401277ebd861206a03c884797c6ec5541
-# github.com/v3io/frames => github.com/v3io/frames v0.7.34
-# github.com/v3io/v3io-tsdb => github.com/v3io/v3io-tsdb v0.10.11
+# github.com/v3io/frames => github.com/v3io/frames v0.7.36
+# github.com/v3io/v3io-tsdb => github.com/v3io/v3io-tsdb v0.10.12
 # google.golang.org/grpc => google.golang.org/grpc v1.19.1
