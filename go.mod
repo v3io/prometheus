@@ -52,6 +52,7 @@ require (
 	github.com/jmespath/go-jmespath v0.0.0-20180206201540-c2b33e8439af // indirect
 	github.com/json-iterator/go v0.0.0-20180612202835-f2b4162afba3
 	github.com/knz/strtime v0.0.0-20181018220328-af2256ee352c // indirect
+	github.com/kr/pretty v0.2.1 // indirect
 	github.com/lib/pq v1.0.0 // indirect
 	github.com/lightstep/lightstep-tracer-go v0.15.6 // indirect
 	github.com/mattn/go-runewidth v0.0.4 // indirect
@@ -86,7 +87,7 @@ require (
 	github.com/shurcooL/vfsgen v0.0.0-20180711163814-62bca832be04
 	github.com/smartystreets/goconvey v0.0.0-20190306220146-200a235640ff // indirect
 	github.com/stretchr/testify v1.4.0
-	github.com/v3io/v3io-tsdb v0.10.10
+	github.com/v3io/v3io-tsdb v0.10.12
 	go.opencensus.io v0.19.2 // indirect
 	golang.org/x/net v0.0.0-20190311183353-d8887717615a
 	golang.org/x/oauth2 v0.0.0-20190226205417-e64efc72b421
@@ -102,7 +103,7 @@ require (
 	gopkg.in/yaml.v2 v2.2.2
 	k8s.io/api v0.0.0-20181213150558-05914d821849
 	k8s.io/apimachinery v0.0.0-20181127025237-2b1284ed4c93
-	k8s.io/client-go v2.0.0-alpha.0.0.20181121191925-a47917edff34+incompatible
+	k8s.io/client-go v0.0.0-20181121191925-a47917edff34
 	k8s.io/klog v0.1.0
 	k8s.io/kube-openapi v0.0.0-20190320154901-5e45bb682580 // indirect
 	sigs.k8s.io/yaml v1.1.0 // indirect
@@ -114,6 +115,6 @@ replace labix.org/v2/mgo => github.com/go-mgo/mgo v0.0.0-20180705113738-7446a034
 
 replace launchpad.net/gocheck => github.com/go-check/check v0.0.0-20180628173108-788fd78401277ebd861206a03c884797c6ec5541
 
-replace github.com/v3io/frames => github.com/v3io/frames v0.7.34
+replace github.com/v3io/frames => github.com/v3io/frames v0.7.36
 
-replace github.com/v3io/v3io-tsdb => github.com/v3io/v3io-tsdb v0.10.11
+replace github.com/v3io/v3io-tsdb => github.com/v3io/v3io-tsdb v0.10.12
