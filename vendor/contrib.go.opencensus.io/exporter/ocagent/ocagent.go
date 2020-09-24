@@ -23,8 +23,6 @@ import (
 
 	"google.golang.org/api/support/bundler"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/metadata"
 
 	"go.opencensus.io/resource"
 	"go.opencensus.io/stats/view"
@@ -54,9 +52,7 @@ type Exporter struct {
 	connectionState int32
 
 	// mu protects the non-atomic and non-channel variables
-	mu sync.RWMutex
-	// senderMu protects the concurrent unsafe traceExporter client
-	senderMu           sync.RWMutex
+	mu                 sync.RWMutex
 	started            bool
 	stopped            bool
 	agentAddress       string
@@ -68,8 +64,6 @@ type Exporter struct {
 	grpcClientConn     *grpc.ClientConn
 	reconnectionPeriod time.Duration
 	resource           *resourcepb.Resource
-	compressor         string
-	headers            map[string]string
 
 	startOnce      sync.Once
 	stopCh         chan bool
@@ -83,8 +77,6 @@ type Exporter struct {
 	// from OpenCensus-Go view.Data to metricspb.Metric.
 	// Please do not confuse it with metricsBundler!
 	viewDataBundler *bundler.Bundler
-
-	clientTransportCredentials credentials.TransportCredentials
 }
 
 func NewExporter(opts ...ExporterOption) (*Exporter, error) {
@@ -131,9 +123,7 @@ const (
 
 var (
 	errAlreadyStarted = errors.New("already started")
-	errNotStarted     = errors.New("not started")
 	errStopped        = errors.New("stopped")
-	errNoConnection   = errors.New("no active connection")
 )
 
 // Start dials to the agent, establishing a connection to it. It also
@@ -196,11 +186,7 @@ func (ae *Exporter) enableConnectionStreams(cc *grpc.ClientConn) error {
 func (ae *Exporter) createTraceServiceConnection(cc *grpc.ClientConn, node *commonpb.Node) error {
 	// Initiate the trace service by sending over node identifier info.
 	traceSvcClient := agenttracepb.NewTraceServiceClient(cc)
-	ctx := context.Background()
-	if len(ae.headers) > 0 {
-		ctx = metadata.NewOutgoingContext(ctx, metadata.New(ae.headers))
-	}
-	traceExporter, err := traceSvcClient.Export(ctx)
+	traceExporter, err := traceSvcClient.Export(context.Background())
 	if err != nil {
 		return fmt.Errorf("Exporter.Start:: TraceServiceClient: %v", err)
 	}
@@ -260,20 +246,10 @@ func (ae *Exporter) createMetricsServiceConnection(cc *grpc.ClientConn, node *co
 func (ae *Exporter) dialToAgent() (*grpc.ClientConn, error) {
 	addr := ae.prepareAgentAddress()
 	var dialOpts []grpc.DialOption
-	if ae.clientTransportCredentials != nil {
-		dialOpts = append(dialOpts, grpc.WithTransportCredentials(ae.clientTransportCredentials))
-	} else if ae.canDialInsecure {
+	if ae.canDialInsecure {
 		dialOpts = append(dialOpts, grpc.WithInsecure())
 	}
-	if ae.compressor != "" {
-		dialOpts = append(dialOpts, grpc.WithDefaultCallOptions(grpc.UseCompressor(ae.compressor)))
-	}
-
-	ctx := context.Background()
-	if len(ae.headers) > 0 {
-		ctx = metadata.NewOutgoingContext(ctx, metadata.New(ae.headers))
-	}
-	return grpc.DialContext(ctx, addr, dialOpts...)
+	return grpc.Dial(addr, dialOpts...)
 }
 
 func (ae *Exporter) handleConfigStreaming(configStream agenttracepb.TraceService_ConfigClient) error {
@@ -294,7 +270,7 @@ func (ae *Exporter) handleConfigStreaming(configStream agenttracepb.TraceService
 		if psamp := cfg.GetProbabilitySampler(); psamp != nil {
 			trace.ApplyConfig(trace.Config{DefaultSampler: trace.ProbabilitySampler(psamp.SamplingProbability)})
 		} else if csamp := cfg.GetConstantSampler(); csamp != nil {
-			alwaysSample := csamp.Decision == tracepb.ConstantSampler_ALWAYS_ON
+			alwaysSample := csamp.Decision == true
 			if alwaysSample {
 				trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
 			} else {
@@ -310,6 +286,10 @@ func (ae *Exporter) handleConfigStreaming(configStream agenttracepb.TraceService
 		}
 	}
 }
+
+var (
+	errNotStarted = errors.New("not started")
+)
 
 // Stop shuts down all the connections and resources
 // related to the exporter.
@@ -356,31 +336,6 @@ func (ae *Exporter) ExportSpan(sd *trace.SpanData) {
 	_ = ae.traceBundler.Add(sd, 1)
 }
 
-func (ae *Exporter) ExportTraceServiceRequest(batch *agenttracepb.ExportTraceServiceRequest) error {
-	if batch == nil || len(batch.Spans) == 0 {
-		return nil
-	}
-
-	select {
-	case <-ae.stopCh:
-		return errStopped
-
-	default:
-		if !ae.connected() {
-			return errNoConnection
-		}
-
-		ae.senderMu.Lock()
-		err := ae.traceExporter.Send(batch)
-		ae.senderMu.Unlock()
-		if err != nil {
-			ae.setStateDisconnected()
-			return err
-		}
-		return nil
-	}
-}
-
 func (ae *Exporter) ExportView(vd *view.Data) {
 	if vd == nil {
 		return
@@ -415,11 +370,9 @@ func (ae *Exporter) uploadTraces(sdl []*trace.SpanData) {
 		if len(protoSpans) == 0 {
 			return
 		}
-		ae.senderMu.Lock()
 		err := ae.traceExporter.Send(&agenttracepb.ExportTraceServiceRequest{
 			Spans: protoSpans,
 		})
-		ae.senderMu.Unlock()
 		if err != nil {
 			ae.setStateDisconnected()
 		}

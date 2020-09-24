@@ -89,7 +89,11 @@ func golistDriverFallback(cfg *Config, words ...string) (*driverResponse, error)
 					return "", err
 				}
 			}
-			outdir = filepath.Join(tmpdir, strings.Replace(p.ImportPath, "/", "_", -1))
+			// Add a "go-build" component to the path to make the tests think the files are in the cache.
+			// This allows the same test to test the pre- and post-Go 1.11 go list logic because the Go 1.11
+			// go list generates test mains in the cache, and the test code knows not to rely on paths in the
+			// cache to stay stable.
+			outdir = filepath.Join(tmpdir, "go-build", strings.Replace(p.ImportPath, "/", "_", -1))
 			if err := os.MkdirAll(outdir, 0755); err != nil {
 				outdir = ""
 				return "", err
@@ -196,11 +200,7 @@ func golistDriverFallback(cfg *Config, words ...string) (*driverResponse, error)
 					})
 					return
 				}
-				// Don't use a .go extension on the file, so that the tests think the file is inside GOCACHE.
-				// This allows the same test to test the pre- and post-Go 1.11 go list logic because the Go 1.11
-				// go list generates test mains in the cache, and the test code knows not to rely on paths in the
-				// cache to stay stable.
-				testmain := filepath.Join(outdir, "testmain-go")
+				testmain := filepath.Join(outdir, "testmain.go")
 				extraimports, extradeps, err := generateTestmain(testmain, testPkg, xtestPkg)
 				if err != nil {
 					testmainPkg.Errors = append(testmainPkg.Errors, Error{
