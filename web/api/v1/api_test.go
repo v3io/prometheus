@@ -38,6 +38,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/common/route"
+	tsdbLabels "github.com/prometheus/tsdb/labels"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/gate"
@@ -50,7 +51,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/util/testutil"
-	tsdbLabels "github.com/prometheus/tsdb/labels"
 )
 
 type testTargetRetriever struct{}
@@ -835,7 +835,7 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 
 	methods := func(f apiFunc) []string {
 		fp := reflect.ValueOf(f).Pointer()
-		if fp == reflect.ValueOf(api.query).Pointer() || fp == reflect.ValueOf(api.queryRange).Pointer() {
+		if fp == reflect.ValueOf(api.query).Pointer() || fp == reflect.ValueOf(api.queryRange).Pointer() || fp == reflect.ValueOf(api.series).Pointer() {
 			return []string{http.MethodGet, http.MethodPost}
 		}
 		return []string{http.MethodGet}
@@ -927,10 +927,10 @@ func TestReadEndpoint(t *testing.T) {
 		config: func() config.Config {
 			return config.Config{
 				GlobalConfig: config.GlobalConfig{
-					ExternalLabels: model.LabelSet{
-						"baz": "a",
-						"b":   "c",
-						"d":   "e",
+					ExternalLabels: labels.Labels{
+						{Name: "baz", Value: "a"},
+						{Name: "b", Value: "c"},
+						{Name: "d", Value: "e"},
 					},
 				},
 			}
@@ -1026,7 +1026,7 @@ func (f *fakeDB) Dir() string {
 func (f *fakeDB) Snapshot(dir string, withHead bool) error { return f.err }
 
 func TestAdminEndpoints(t *testing.T) {
-	tsdb, tsdbWithError := &fakeDB{}, &fakeDB{err: fmt.Errorf("some error")}
+	tsdb, tsdbWithError := &fakeDB{}, &fakeDB{err: errors.New("some error")}
 	snapshotAPI := func(api *API) apiFunc { return api.snapshot }
 	cleanAPI := func(api *API) apiFunc { return api.cleanTombstones }
 	deleteAPI := func(api *API) apiFunc { return api.deleteSeries }

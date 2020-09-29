@@ -135,6 +135,16 @@ job_name: <job_name>
 # when a time series does not have a given label yet and are ignored otherwise.
 [ honor_labels: <boolean> | default = false ]
 
+# honor_timestamps controls whether Prometheus respects the timestamps present
+# in scraped data.
+#
+# If honor_timestamps is set to "true", the timestamps of the metrics exposed
+# by the target will be used.
+#
+# If honor_timestamps is set to "false", the timestamps of the metrics exposed
+# by the target will be ignored.
+[ honor_timestamps: <boolean> | default = true ]
+
 # Configures the protocol scheme used for requests.
 [ scheme: <scheme> | default = http ]
 
@@ -337,8 +347,9 @@ services:
 # See https://www.consul.io/api/catalog.html#list-nodes-for-service to know more
 # about the possible filters that can be used.
 
-# An optional tag used to filter nodes for a given service.
-[ tag: <string> ]
+# An optional list of tags used to filter nodes for a given service. Services must contain all tags in the list.
+tags:
+  [ - <string> ]
 
 # Node metadata used to filter nodes for a given service.
 [ node_meta:
@@ -492,14 +503,16 @@ interface.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
+* `__meta_openstack_address_pool`: the pool of the private IP.
+* `__meta_openstack_instance_flavor`: the flavor of the OpenStack instance.
 * `__meta_openstack_instance_id`: the OpenStack instance ID.
 * `__meta_openstack_instance_name`: the OpenStack instance name.
 * `__meta_openstack_instance_status`: the status of the OpenStack instance.
-* `__meta_openstack_instance_flavor`: the flavor of the OpenStack instance.
-* `__meta_openstack_public_ip`: the public IP of the OpenStack instance.
 * `__meta_openstack_private_ip`: the private IP of the OpenStack instance.
-* `__meta_openstack_address_pool`: the pool of the private IP.
+* `__meta_openstack_project_id`: the project (tenant) owning this instance.
+* `__meta_openstack_public_ip`: the public IP of the OpenStack instance.
 * `__meta_openstack_tag_<tagkey>`: each tag value of the instance.
+* `__meta_openstack_user_id`: the user account owning the tenant.
 
 See below for the configuration options for OpenStack discovery:
 
@@ -695,7 +708,9 @@ Available meta labels:
 
 * `__meta_kubernetes_node_name`: The name of the node object.
 * `__meta_kubernetes_node_label_<labelname>`: Each label from the node object.
+* `__meta_kubernetes_node_labelpresent_<labelname>`: `true` for each label from the node object.
 * `__meta_kubernetes_node_annotation_<annotationname>`: Each annotation from the node object.
+* `__meta_kubernetes_node_annotationpresent_<annotationname>`: `true` for each annotation from the node object.
 * `__meta_kubernetes_node_address_<address_type>`: The first address for each node address type, if it exists.
 
 In addition, the `instance` label for the node will be set to the node name
@@ -711,10 +726,12 @@ service port.
 Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the service object.
-* `__meta_kubernetes_service_annotation_<annotationname>`: The annotation of the service object.
+* `__meta_kubernetes_service_annotation_<annotationname>`: Each annotation from the service object.
+* `__meta_kubernetes_service_annotationpresent_<annotationname>`: "true" for each annotation of the service object.
 * `__meta_kubernetes_service_cluster_ip`: The cluster IP address of the service. (Does not apply to services of type ExternalName)
 * `__meta_kubernetes_service_external_name`: The DNS name of the service. (Applies to services of type ExternalName)
-* `__meta_kubernetes_service_label_<labelname>`: The label of the service object.
+* `__meta_kubernetes_service_label_<labelname>`: Each label from the service object.
+* `__meta_kubernetes_service_labelpresent_<labelname>`: `true` for each label of the service object.
 * `__meta_kubernetes_service_name`: The name of the service object.
 * `__meta_kubernetes_service_port_name`: Name of the service port for the target.
 * `__meta_kubernetes_service_port_number`: Number of the service port for the target.
@@ -731,8 +748,10 @@ Available meta labels:
 * `__meta_kubernetes_namespace`: The namespace of the pod object.
 * `__meta_kubernetes_pod_name`: The name of the pod object.
 * `__meta_kubernetes_pod_ip`: The pod IP of the pod object.
-* `__meta_kubernetes_pod_label_<labelname>`: The label of the pod object.
-* `__meta_kubernetes_pod_annotation_<annotationname>`: The annotation of the pod object.
+* `__meta_kubernetes_pod_label_<labelname>`: Each label from the pod object.
+* `__meta_kubernetes_pod_labelpresent_<labelname>`: `true`for each label from the pod object.
+* `__meta_kubernetes_pod_annotation_<annotationname>`: Each annotation from the pod object.
+* `__meta_kubernetes_pod_annotationpresent_<annotationname>`: `true` for each annotation from the pod object.
 * `__meta_kubernetes_pod_container_name`: Name of the container the target address points to.
 * `__meta_kubernetes_pod_container_port_name`: Name of the container port.
 * `__meta_kubernetes_pod_container_port_number`: Number of the container port.
@@ -776,8 +795,10 @@ Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the ingress object.
 * `__meta_kubernetes_ingress_name`: The name of the ingress object.
-* `__meta_kubernetes_ingress_label_<labelname>`: The label of the ingress object.
-* `__meta_kubernetes_ingress_annotation_<annotationname>`: The annotation of the ingress object.
+* `__meta_kubernetes_ingress_label_<labelname>`: Each label from the ingress object.
+* `__meta_kubernetes_ingress_labelpresent_<labelname>`: `true` for each label from the ingress object.
+* `__meta_kubernetes_ingress_annotation_<annotationname>`: Each annotation from the ingress object.
+* `__meta_kubernetes_ingress_annotationpresent_<annotationname>`: `true` for each annotation from the ingress object.
 * `__meta_kubernetes_ingress_scheme`: Protocol scheme of ingress, `https` if TLS
   config is set. Defaults to `http`.
 * `__meta_kubernetes_ingress_path`: Path from ingress spec. Defaults to `/`.

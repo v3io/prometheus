@@ -23,9 +23,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/pkg/relabel"
+	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/assert"
+	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/discovery/azure"
+	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/discovery/consul"
 	"github.com/prometheus/prometheus/discovery/dns"
 	"github.com/prometheus/prometheus/discovery/ec2"
@@ -36,12 +40,9 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/discovery/triton"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
-
-	config_util "github.com/prometheus/common/config"
-	"github.com/prometheus/common/model"
-	sd_config "github.com/prometheus/prometheus/discovery/config"
+	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/util/testutil"
-	"gopkg.in/yaml.v2"
 )
 
 func mustParseURL(u string) *config_util.URL {
@@ -58,9 +59,9 @@ var expectedConf = &Config{
 		ScrapeTimeout:      DefaultGlobalConfig.ScrapeTimeout,
 		EvaluationInterval: model.Duration(30 * time.Second),
 
-		ExternalLabels: model.LabelSet{
-			"monitor": "codelab",
-			"foo":     "bar",
+		ExternalLabels: labels.Labels{
+			{Name: "foo", Value: "bar"},
+			{Name: "monitor", Value: "codelab"},
 		},
 	},
 
@@ -88,6 +89,12 @@ var expectedConf = &Config{
 			URL:           mustParseURL("http://remote2/push"),
 			RemoteTimeout: model.Duration(30 * time.Second),
 			QueueConfig:   DefaultQueueConfig,
+			HTTPClientConfig: config_util.HTTPClientConfig{
+				TLSConfig: config_util.TLSConfig{
+					CertFile: filepath.FromSlash("testdata/valid_cert_file"),
+					KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
+				},
+			},
 		},
 	},
 
@@ -102,6 +109,12 @@ var expectedConf = &Config{
 			RemoteTimeout:    model.Duration(1 * time.Minute),
 			ReadRecent:       false,
 			RequiredMatchers: model.LabelSet{"job": "special"},
+			HTTPClientConfig: config_util.HTTPClientConfig{
+				TLSConfig: config_util.TLSConfig{
+					CertFile: filepath.FromSlash("testdata/valid_cert_file"),
+					KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
+				},
+			},
 		},
 	},
 
@@ -109,9 +122,10 @@ var expectedConf = &Config{
 		{
 			JobName: "prometheus",
 
-			HonorLabels:    true,
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorLabels:     true,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -181,9 +195,10 @@ var expectedConf = &Config{
 
 			JobName: "service-x",
 
-			ScrapeInterval: model.Duration(50 * time.Second),
-			ScrapeTimeout:  model.Duration(5 * time.Second),
-			SampleLimit:    1000,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(50 * time.Second),
+			ScrapeTimeout:   model.Duration(5 * time.Second),
+			SampleLimit:     1000,
 
 			HTTPClientConfig: config_util.HTTPClientConfig{
 				BasicAuth: &config_util.BasicAuth{
@@ -270,8 +285,9 @@ var expectedConf = &Config{
 		{
 			JobName: "service-y",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -282,7 +298,7 @@ var expectedConf = &Config{
 						Server:          "localhost:1234",
 						Token:           "mysecret",
 						Services:        []string{"nginx", "cache", "mysql"},
-						ServiceTag:      "canary",
+						ServiceTags:     []string{"canary", "v1"},
 						NodeMeta:        map[string]string{"rack": "123"},
 						TagSeparator:    consul.DefaultSDConfig.TagSeparator,
 						Scheme:          "https",
@@ -312,8 +328,9 @@ var expectedConf = &Config{
 		{
 			JobName: "service-z",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  model.Duration(10 * time.Second),
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   model.Duration(10 * time.Second),
 
 			MetricsPath: "/metrics",
 			Scheme:      "http",
@@ -330,8 +347,9 @@ var expectedConf = &Config{
 		{
 			JobName: "service-kubernetes",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -346,6 +364,10 @@ var expectedConf = &Config{
 								Username: "myusername",
 								Password: "mysecret",
 							},
+							TLSConfig: config_util.TLSConfig{
+								CertFile: filepath.FromSlash("testdata/valid_cert_file"),
+								KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
+							},
 						},
 						NamespaceDiscovery: kubernetes.NamespaceDiscovery{},
 					},
@@ -355,11 +377,18 @@ var expectedConf = &Config{
 		{
 			JobName: "service-kubernetes-namespaces",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config_util.HTTPClientConfig{
+				BasicAuth: &config_util.BasicAuth{
+					Username:     "myusername",
+					PasswordFile: filepath.FromSlash("testdata/valid_password_file"),
+				},
+			},
 
 			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
 				KubernetesSDConfigs: []*kubernetes.SDConfig{
@@ -378,8 +407,9 @@ var expectedConf = &Config{
 		{
 			JobName: "service-marathon",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -405,8 +435,9 @@ var expectedConf = &Config{
 		{
 			JobName: "service-ec2",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -437,8 +468,9 @@ var expectedConf = &Config{
 		{
 			JobName: "service-azure",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -461,8 +493,9 @@ var expectedConf = &Config{
 		{
 			JobName: "service-nerve",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -480,8 +513,9 @@ var expectedConf = &Config{
 		{
 			JobName: "0123service-xxx",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -498,10 +532,32 @@ var expectedConf = &Config{
 			},
 		},
 		{
+			JobName: "badfederation",
+
+			HonorTimestamps: false,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath: "/federate",
+			Scheme:      DefaultScrapeConfig.Scheme,
+
+			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
+				StaticConfigs: []*targetgroup.Group{
+					{
+						Targets: []model.LabelSet{
+							{model.AddressLabel: "localhost:9090"},
+						},
+						Source: "0",
+					},
+				},
+			},
+		},
+		{
 			JobName: "測試",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -520,8 +576,9 @@ var expectedConf = &Config{
 		{
 			JobName: "service-triton",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -547,8 +604,9 @@ var expectedConf = &Config{
 		{
 			JobName: "service-openstack",
 
-			ScrapeInterval: model.Duration(15 * time.Second),
-			ScrapeTimeout:  DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -561,9 +619,9 @@ var expectedConf = &Config{
 						Port:            80,
 						RefreshInterval: model.Duration(60 * time.Second),
 						TLSConfig: config_util.TLSConfig{
-							CAFile:   "valid_ca_file",
-							CertFile: "valid_cert_file",
-							KeyFile:  "valid_key_file",
+							CAFile:   "testdata/valid_ca_file",
+							CertFile: "testdata/valid_cert_file",
+							KeyFile:  "testdata/valid_key_file",
 						},
 					},
 				},
@@ -603,7 +661,7 @@ func TestLoadConfig(t *testing.T) {
 	testutil.Ok(t, err)
 
 	expectedConf.original = c.original
-	testutil.Equals(t, expectedConf, c)
+	assert.Equal(t, expectedConf, c)
 }
 
 // YAML marshaling must not reveal authentication credentials.
@@ -656,6 +714,9 @@ var expectedErrors = []struct {
 	}, {
 		filename: "labelname2.bad.yml",
 		errMsg:   `"not:allowed" is not a valid label name`,
+	}, {
+		filename: "labelvalue.bad.yml",
+		errMsg:   `"\xff" is not a valid label value`,
 	}, {
 		filename: "regex.bad.yml",
 		errMsg:   "error parsing regexp",

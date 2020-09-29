@@ -35,26 +35,24 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	template_text "text/template"
 	"time"
 
-	"google.golang.org/grpc"
-
-	template_text "text/template"
-
-	"github.com/cockroachdb/cmux"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	"github.com/mwitkow/go-conntrack"
+	conntrack "github.com/mwitkow/go-conntrack"
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
-	"github.com/opentracing/opentracing-go"
+	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/prometheus/client_model/go"
+	io_prometheus_client "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
-	prometheus_tsdb "github.com/prometheus/prometheus/storage/tsdb"
 	"github.com/prometheus/tsdb"
+	"github.com/soheilhy/cmux"
 	"golang.org/x/net/netutil"
+	"google.golang.org/grpc"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
@@ -62,6 +60,7 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
+	prometheus_tsdb "github.com/prometheus/prometheus/storage/tsdb"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/httputil"
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
@@ -258,10 +257,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		o.Flags,
 		h.testReady,
 		func() api_v1.TSDBAdmin {
-			if db := h.options.TSDB(); db != nil {
-				return db
-			}
-			return nil
+			return h.options.TSDB()
 		},
 		h.options.EnableAdminAPI,
 		logger,
@@ -315,7 +311,9 @@ func New(logger log.Logger, o *Options) *Handler {
 
 	if o.EnableLifecycle {
 		router.Post("/-/quit", h.quit)
+		router.Put("/-/quit", h.quit)
 		router.Post("/-/reload", h.reload)
+		router.Put("/-/reload", h.reload)
 	} else {
 		router.Post("/-/quit", func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusForbidden)
@@ -328,11 +326,11 @@ func New(logger log.Logger, o *Options) *Handler {
 	}
 	router.Get("/-/quit", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
-		w.Write([]byte("Only POST requests allowed"))
+		w.Write([]byte("Only POST or PUT requests allowed"))
 	})
 	router.Get("/-/reload", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
-		w.Write([]byte("Only POST requests allowed"))
+		w.Write([]byte("Only POST or PUT requests allowed"))
 	})
 
 	router.Get("/debug/*subpath", serveDebug)
@@ -478,8 +476,9 @@ func (h *Handler) Run(ctx context.Context) error {
 		conntrack.TrackWithTracing())
 
 	var (
-		m       = cmux.New(listener)
-		grpcl   = m.Match(cmux.HTTP2HeaderField("content-type", "application/grpc"))
+		m = cmux.New(listener)
+		// See https://github.com/grpc/grpc-go/issues/2636 for why we need to use MatchWithWriters().
+		grpcl   = m.MatchWithWriters(cmux.HTTP2MatchHeaderFieldSendSettings("content-type", "application/grpc"))
 		httpl   = m.Match(cmux.HTTP1Fast())
 		grpcSrv = grpc.NewServer()
 	)
@@ -636,6 +635,7 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		GoroutineCount      int
 		GOMAXPROCS          int
 		GOGC                string
+		GODEBUG             string
 		CorruptionCount     int64
 		ChunkCount          int64
 		TimeSeriesCount     int64
@@ -650,6 +650,7 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		GoroutineCount: runtime.NumGoroutine(),
 		GOMAXPROCS:     runtime.GOMAXPROCS(0),
 		GOGC:           os.Getenv("GOGC"),
+		GODEBUG:        os.Getenv("GODEBUG"),
 	}
 
 	if h.options.TSDBCfg.RetentionDuration != 0 {
@@ -815,12 +816,6 @@ func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 		"pathPrefix":   func() string { return opts.ExternalURL.Path },
 		"pageTitle":    func() string { return opts.PageTitle },
 		"buildVersion": func() string { return opts.Version.Revision },
-		"stripLabels": func(lset map[string]string, labels ...string) map[string]string {
-			for _, ln := range labels {
-				delete(lset, ln)
-			}
-			return lset
-		},
 		"globalURL": func(u *url.URL) *url.URL {
 			host, port, err := net.SplitHostPort(u.Host)
 			if err != nil {
@@ -923,11 +918,11 @@ func (h *Handler) getTemplate(name string) (string, error) {
 
 	err := appendf("_base.html")
 	if err != nil {
-		return "", fmt.Errorf("error reading base template: %s", err)
+		return "", errors.Wrap(err, "error reading base template")
 	}
 	err = appendf(name)
 	if err != nil {
-		return "", fmt.Errorf("error reading page template %s: %s", name, err)
+		return "", errors.Wrapf(err, "error reading page template %s", name)
 	}
 
 	return tmpl, nil
