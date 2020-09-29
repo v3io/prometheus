@@ -63,20 +63,22 @@ var (
 	// a subquery in milliseconds.
 	DefaultEvaluationInterval int64
 
-	supportedV3ioFunctions = map[string]bool{"max_over_time": true,
+	supportedV3ioFunctions = map[string]bool{
+		"max_over_time":    true,
 		"min_over_time":    true,
 		"avg_over_time":    true,
 		"sum_over_time":    true,
 		"count_over_time":  true,
 		"stddev_over_time": true,
 		"stdvar_over_time": true}
-	supportedV3ioAggregations = map[ItemType]bool{itemAvg: true,
-		itemCount:  true,
-		itemSum:    true,
-		itemMin:    true,
-		itemMax:    true,
-		itemStddev: true,
-		itemStdvar: true}
+	supportedV3ioAggregations = map[ItemType]bool{
+		ItemAvg:    true,
+		ItemCount:  true,
+		ItemSum:    true,
+		ItemMin:    true,
+		ItemMax:    true,
+		ItemStddev: true,
+		ItemStdvar: true}
 )
 
 // SetDefaultEvaluationInterval sets DefaultEvaluationInterval.
