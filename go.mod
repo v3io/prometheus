@@ -109,12 +109,6 @@ require (
 	sigs.k8s.io/yaml v1.1.0 // indirect
 )
 
-replace k8s.io/klog => github.com/simonpasquier/klog-gokit v0.1.0
-
-replace labix.org/v2/mgo => github.com/go-mgo/mgo v0.0.0-20180705113738-7446a0344b78
-
-replace launchpad.net/gocheck => github.com/go-check/check v0.0.0-20180628173108-788fd7840127
-
 replace github.com/v3io/frames => github.com/v3io/frames v0.7.36
 
 replace github.com/v3io/v3io-tsdb => github.com/v3io/v3io-tsdb v0.10.12
