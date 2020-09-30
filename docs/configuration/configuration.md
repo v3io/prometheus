@@ -274,6 +274,7 @@ The following meta labels are available on targets during relabeling:
 * `__meta_azure_machine_name`: the machine name
 * `__meta_azure_machine_os_type`: the machine operating system
 * `__meta_azure_machine_private_ip`: the machine's private IP
+* `__meta_azure_machine_public_ip`: the machine's public IP if it exists
 * `__meta_azure_machine_resource_group`: the machine's resource group
 * `__meta_azure_machine_tag_<tagname>`: each tag value of the machine
 * `__meta_azure_machine_scale_set`: the name of the scale set which the vm is part of (this value is only set if you are using a [scale set](https://docs.microsoft.com/en-us/azure/virtual-machine-scale-sets/))
@@ -358,7 +359,7 @@ tags:
 # The string by which Consul tags are joined into the tag label.
 [ tag_separator: <string> | default = , ]
 
-# Allow stale Consul results (see https://www.consul.io/api/index.html#consistency-modes). Will reduce load on Consul.
+# Allow stale Consul results (see https://www.consul.io/api/features/consistency.html). Will reduce load on Consul.
 [ allow_stale: <bool> ]
 
 # The time after which the provided names are refreshed.
@@ -777,6 +778,8 @@ Available meta labels:
 * `__meta_kubernetes_endpoints_name`: The names of the endpoints object.
 * For all targets discovered directly from the endpoints list (those not additionally inferred
   from underlying pods), the following labels are attached:
+  * `__meta_kubernetes_endpoint_hostname`: Hostname of the endpoint.
+  * `__meta_kubernetes_endpoint_node_name`: Name of the node hosting the endpoint.
   * `__meta_kubernetes_endpoint_ready`: Set to `true` or `false` for the endpoint's ready state.
   * `__meta_kubernetes_endpoint_port_name`: Name of the endpoint port.
   * `__meta_kubernetes_endpoint_port_protocol`: Protocol of the endpoint port.
