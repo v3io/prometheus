@@ -26,7 +26,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb"
 
 	"github.com/alecthomas/units"
 	"github.com/go-kit/kit/log"

@@ -38,7 +38,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promlog"
 	"github.com/prometheus/common/route"
-	tsdbLabels "github.com/prometheus/tsdb/labels"
+	tsdbLabels "github.com/prometheus/prometheus/tsdb/labels"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/gate"
@@ -50,6 +50,7 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -165,7 +166,7 @@ func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
 func (m rulesRetrieverMock) RuleGroups() []*rules.Group {
 	var ar rulesRetrieverMock
 	arules := ar.AlertingRules()
-	storage := testutil.NewStorage(m.testing)
+	storage := teststorage.New(m.testing)
 	defer storage.Close()
 
 	engineOpts := promql.EngineOpts{
@@ -274,9 +275,15 @@ func TestEndpoints(t *testing.T) {
 		}
 
 		al := promlog.AllowedLevel{}
-		al.Set("debug")
+		if err := al.Set("debug"); err != nil {
+			t.Fatal(err)
+		}
+
 		af := promlog.AllowedFormat{}
-		al.Set("logfmt")
+		if err := af.Set("logfmt"); err != nil {
+			t.Fatal(err)
+		}
+
 		promlogConfig := promlog.Config{
 			Level:  &al,
 			Format: &af,
@@ -1330,6 +1337,14 @@ func TestParseTime(t *testing.T) {
 			// Test float rounding.
 			input:  "1543578564.705",
 			result: time.Unix(1543578564, 705*1e6),
+		},
+		{
+			input:  minTime.Format(time.RFC3339Nano),
+			result: minTime,
+		},
+		{
+			input:  maxTime.Format(time.RFC3339Nano),
+			result: maxTime,
 		},
 	}
 
