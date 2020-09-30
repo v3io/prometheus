@@ -266,6 +266,9 @@ type Options struct {
 	// When true it disables the overlapping blocks check.
 	// This in-turn enables vertical compaction and vertical query merge.
 	AllowOverlappingBlocks bool
+
+	// When true records in the WAL will be compressed.
+	WALCompression bool
 }
 
 // Open returns a new storage backed by a TSDB database that is configured for Prometheus.
