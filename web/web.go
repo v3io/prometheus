@@ -87,6 +87,7 @@ var (
 		"/service-discovery",
 		"/status",
 		"/targets",
+		"/tsdb-status",
 		"/version",
 	}
 )
@@ -350,6 +351,15 @@ func New(logger log.Logger, o *Options) *Handler {
 		r.URL.Path = path.Join("/static", route.Param(r.Context(), "filepath"))
 		fs := server.StaticFileServer(ui.Assets)
 		fs.ServeHTTP(w, r)
+	})
+
+	// Make sure that "<path-prefix>/new" is redirected to "<path-prefix>/new/" and
+	// not just the naked "/new/", which would be the default behavior of the router
+	// with the "RedirectTrailingSlash" option (https://godoc.org/github.com/julienschmidt/httprouter#Router.RedirectTrailingSlash),
+	// and which breaks users with a --web.route-prefix that deviates from the path derived
+	// from the external URL.
+	router.Get("/new", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, path.Join(o.ExternalURL.Path, "new")+"/", http.StatusFound)
 	})
 
 	router.Get("/new/*filepath", func(w http.ResponseWriter, r *http.Request) {

@@ -43,6 +43,9 @@ const Navigation: FC<PathPrefixProps> = ({ pathPrefix }) => {
               <DropdownItem tag={Link} to={`${pathPrefix}/new/status`}>
                 Runtime & Build Information
               </DropdownItem>
+              <DropdownItem tag={Link} to={`${pathPrefix}/new/tsdb-status`}>
+                TSDB Status
+              </DropdownItem>
               <DropdownItem tag={Link} to={`${pathPrefix}/new/flags`}>
                 Command-Line Flags
               </DropdownItem>
@@ -64,9 +67,7 @@ const Navigation: FC<PathPrefixProps> = ({ pathPrefix }) => {
             <NavLink href="https://prometheus.io/docs/prometheus/latest/getting_started/">Help</NavLink>
           </NavItem>
           <NavItem>
-            <NavLink tag={Link} to={pathPrefix}>
-              Classic UI
-            </NavLink>
+            <NavLink href={`${pathPrefix}/`}>Classic UI</NavLink>
           </NavItem>
         </Nav>
       </Collapse>

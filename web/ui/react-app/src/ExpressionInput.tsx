@@ -10,14 +10,14 @@ import { faSearch, faSpinner } from '@fortawesome/free-solid-svg-icons';
 
 interface ExpressionInputProps {
   value: string;
+  onExpressionChange: (expr: string) => void;
   autocompleteSections: { [key: string]: string[] };
-  executeQuery: (expr: string) => void;
+  executeQuery: () => void;
   loading: boolean;
 }
 
 interface ExpressionInputState {
   height: number | string;
-  value: string;
 }
 
 class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputState> {
@@ -26,7 +26,6 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
   constructor(props: ExpressionInputProps) {
     super(props);
     this.state = {
-      value: props.value,
       height: 'auto',
     };
   }
@@ -42,27 +41,29 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
   };
 
   handleInput = () => {
-    this.setState(
-      {
-        height: 'auto',
-        value: this.exprInputRef.current!.value,
-      },
-      this.setHeight
-    );
+    this.setValue(this.exprInputRef.current!.value);
   };
 
-  handleDropdownSelection = (value: string) => {
-    this.setState({ value, height: 'auto' }, this.setHeight);
+  setValue = (value: string) => {
+    const { onExpressionChange } = this.props;
+    onExpressionChange(value);
+    this.setState({ height: 'auto' }, this.setHeight);
   };
+
+  componentDidUpdate(prevProps: ExpressionInputProps) {
+    const { value } = this.props;
+    if (value !== prevProps.value) {
+      this.setValue(value);
+    }
+  }
 
   handleKeyPress = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    const { executeQuery } = this.props;
     if (event.key === 'Enter' && !event.shiftKey) {
-      this.executeQuery();
+      executeQuery();
       event.preventDefault();
     }
   };
-
-  executeQuery = () => this.props.executeQuery(this.exprInputRef.current!.value);
 
   getSearchMatches = (input: string, expressions: string[]) => {
     return fuzzy.filter(input.replace(/ /g, ''), expressions, {
@@ -97,7 +98,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
                           },
                         });
                         return (
-                          <SanitizeHTML tag="li" {...itemProps} allowedTags={['strong']}>
+                          <SanitizeHTML key={title} tag="li" {...itemProps} allowedTags={['strong']}>
                             {string}
                           </SanitizeHTML>
                         );
@@ -124,9 +125,10 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
   };
 
   render() {
-    const { value, height } = this.state;
+    const { executeQuery, value } = this.props;
+    const { height } = this.state;
     return (
-      <Downshift onSelect={this.handleDropdownSelection}>
+      <Downshift onSelect={this.setValue}>
         {downshift => (
           <div>
             <InputGroup className="expression-input">
@@ -174,7 +176,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
                 value={value}
               />
               <InputGroupAddon addonType="append">
-                <Button className="execute-btn" color="primary" onClick={this.executeQuery}>
+                <Button className="execute-btn" color="primary" onClick={executeQuery}>
                   Execute
                 </Button>
               </InputGroupAddon>

@@ -4,7 +4,7 @@ import { Container } from 'reactstrap';
 
 import './App.css';
 import { Router, Redirect } from '@reach/router';
-import { Alerts, Config, Flags, Rules, Services, Status, Targets, PanelList } from './pages';
+import { Alerts, Config, Flags, Rules, Services, Status, Targets, TSDBStatus, PanelList } from './pages';
 import PathPrefixProps from './PathPrefixProps';
 
 const App: FC<PathPrefixProps> = ({ pathPrefix }) => {
@@ -15,6 +15,10 @@ const App: FC<PathPrefixProps> = ({ pathPrefix }) => {
         <Router basepath={`${pathPrefix}/new`}>
           <Redirect from="/" to={`${pathPrefix}/new/graph`} />
 
+          {/*
+            NOTE: Any route added here needs to also be added to the list of
+            React-handled router paths ("reactRouterPaths") in /web/web.go.
+          */}
           <PanelList path="/graph" pathPrefix={pathPrefix} />
           <Alerts path="/alerts" pathPrefix={pathPrefix} />
           <Config path="/config" pathPrefix={pathPrefix} />
@@ -22,6 +26,7 @@ const App: FC<PathPrefixProps> = ({ pathPrefix }) => {
           <Rules path="/rules" pathPrefix={pathPrefix} />
           <Services path="/service-discovery" pathPrefix={pathPrefix} />
           <Status path="/status" pathPrefix={pathPrefix} />
+          <TSDBStatus path="/tsdb-status" pathPrefix={pathPrefix} />
           <Targets path="/targets" pathPrefix={pathPrefix} />
         </Router>
       </Container>

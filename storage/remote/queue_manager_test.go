@@ -35,8 +35,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/prompb"
-	tsdbLabels "github.com/prometheus/prometheus/tsdb/labels"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -117,7 +117,7 @@ func TestSampleDeliveryOrder(t *testing.T) {
 		})
 		series = append(series, record.RefSeries{
 			Ref:    uint64(i),
-			Labels: tsdbLabels.Labels{tsdbLabels.Label{Name: "__name__", Value: name}},
+			Labels: labels.Labels{labels.Label{Name: "__name__", Value: name}},
 		})
 	}
 
@@ -186,7 +186,7 @@ func TestSeriesReset(t *testing.T) {
 	for i := 0; i < numSegments; i++ {
 		series := []record.RefSeries{}
 		for j := 0; j < numSeries; j++ {
-			series = append(series, record.RefSeries{Ref: uint64((i * 100) + j), Labels: tsdbLabels.Labels{{Name: "a", Value: "a"}}})
+			series = append(series, record.RefSeries{Ref: uint64((i * 100) + j), Labels: labels.Labels{{Name: "a", Value: "a"}}})
 		}
 		m.StoreSeries(series, i)
 	}
@@ -266,8 +266,8 @@ func TestReleaseNoninternedString(t *testing.T) {
 		m.StoreSeries([]record.RefSeries{
 			{
 				Ref: uint64(i),
-				Labels: tsdbLabels.Labels{
-					tsdbLabels.Label{
+				Labels: labels.Labels{
+					labels.Label{
 						Name:  "asdf",
 						Value: fmt.Sprintf("%d", i),
 					},
@@ -338,7 +338,7 @@ func createTimeseries(n int) ([]record.RefSample, []record.RefSeries) {
 		})
 		series = append(series, record.RefSeries{
 			Ref:    uint64(i),
-			Labels: tsdbLabels.Labels{{Name: "__name__", Value: name}},
+			Labels: labels.Labels{{Name: "__name__", Value: name}},
 		})
 	}
 	return samples, series
@@ -446,6 +446,10 @@ func (c *TestStorageClient) Name() string {
 	return "teststorageclient"
 }
 
+func (c *TestStorageClient) Endpoint() string {
+	return "http://test-remote.com/1234"
+}
+
 // TestBlockingStorageClient is a queue_manager StorageClient which will block
 // on any calls to Store(), until the request's Context is cancelled, at which
 // point the `numCalls` property will contain a count of how many times Store()
@@ -470,6 +474,10 @@ func (c *TestBlockingStorageClient) NumCalls() uint64 {
 
 func (c *TestBlockingStorageClient) Name() string {
 	return "testblockingstorageclient"
+}
+
+func (c *TestBlockingStorageClient) Endpoint() string {
+	return "http://test-remote-blocking.com/1234"
 }
 
 func BenchmarkSampleDelivery(b *testing.B) {
@@ -532,7 +540,7 @@ func BenchmarkStartup(b *testing.B) {
 		m := NewQueueManager(nil, logger, dir,
 			newEWMARate(ewmaWeight, shardUpdateDuration),
 			config.DefaultQueueConfig, nil, nil, c, 1*time.Minute)
-		m.watcher.StartTime = math.MaxInt64
+		m.watcher.SetStartTime(timestamp.Time(math.MaxInt64))
 		m.watcher.MaxSegment = segments[len(segments)-2]
 		err := m.watcher.Run()
 		testutil.Ok(b, err)
@@ -541,27 +549,27 @@ func BenchmarkStartup(b *testing.B) {
 
 func TestProcessExternalLabels(t *testing.T) {
 	for _, tc := range []struct {
-		labels         tsdbLabels.Labels
+		labels         labels.Labels
 		externalLabels labels.Labels
 		expected       labels.Labels
 	}{
 		// Test adding labels at the end.
 		{
-			labels:         tsdbLabels.Labels{{Name: "a", Value: "b"}},
+			labels:         labels.Labels{{Name: "a", Value: "b"}},
 			externalLabels: labels.Labels{{Name: "c", Value: "d"}},
 			expected:       labels.Labels{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}},
 		},
 
 		// Test adding labels at the beginning.
 		{
-			labels:         tsdbLabels.Labels{{Name: "c", Value: "d"}},
+			labels:         labels.Labels{{Name: "c", Value: "d"}},
 			externalLabels: labels.Labels{{Name: "a", Value: "b"}},
 			expected:       labels.Labels{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}},
 		},
 
 		// Test we don't override existing labels.
 		{
-			labels:         tsdbLabels.Labels{{Name: "a", Value: "b"}},
+			labels:         labels.Labels{{Name: "a", Value: "b"}},
 			externalLabels: labels.Labels{{Name: "a", Value: "c"}},
 			expected:       labels.Labels{{Name: "a", Value: "b"}},
 		},
