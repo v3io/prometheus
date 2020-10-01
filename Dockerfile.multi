@@ -1,4 +1,4 @@
-FROM golang:1.14 as builder
+FROM golang:1.13 as builder
 ADD ./ /go/src/github.com/prometheus/prometheus
 WORKDIR /go/src/github.com/prometheus/prometheus
 RUN git clone https://github.com/prometheus/promu /go/src/github.com/prometheus/promu
