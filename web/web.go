@@ -231,6 +231,7 @@ type Options struct {
 	PageTitle                  string
 	RemoteReadSampleLimit      int
 	RemoteReadConcurrencyLimit int
+	RemoteReadBytesInFrame     int
 
 	V3ioConfig *v3ioConfig.V3ioConfig
 
@@ -296,6 +297,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		h.ruleManager,
 		h.options.RemoteReadSampleLimit,
 		h.options.RemoteReadConcurrencyLimit,
+		h.options.RemoteReadBytesInFrame,
 		h.options.CORSOrigin,
 	)
 

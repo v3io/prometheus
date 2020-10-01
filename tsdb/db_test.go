@@ -33,9 +33,11 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/labels"
-	"github.com/prometheus/prometheus/tsdb/testutil"
+	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wal"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func openTestDB(t testing.TB, opts *Options) (db *DB, close func()) {
@@ -243,27 +245,27 @@ func TestDeleteSimple(t *testing.T) {
 	numSamples := int64(10)
 
 	cases := []struct {
-		intervals Intervals
+		Intervals tombstones.Intervals
 		remaint   []int64
 	}{
 		{
-			intervals: Intervals{{0, 3}},
+			Intervals: tombstones.Intervals{{Mint: 0, Maxt: 3}},
 			remaint:   []int64{4, 5, 6, 7, 8, 9},
 		},
 		{
-			intervals: Intervals{{1, 3}},
+			Intervals: tombstones.Intervals{{Mint: 1, Maxt: 3}},
 			remaint:   []int64{0, 4, 5, 6, 7, 8, 9},
 		},
 		{
-			intervals: Intervals{{1, 3}, {4, 7}},
+			Intervals: tombstones.Intervals{{Mint: 1, Maxt: 3}, {Mint: 4, Maxt: 7}},
 			remaint:   []int64{0, 8, 9},
 		},
 		{
-			intervals: Intervals{{1, 3}, {4, 700}},
+			Intervals: tombstones.Intervals{{Mint: 1, Maxt: 3}, {Mint: 4, Maxt: 700}},
 			remaint:   []int64{0},
 		},
 		{ // This case is to ensure that labels and symbols are deleted.
-			intervals: Intervals{{0, 9}},
+			Intervals: tombstones.Intervals{{Mint: 0, Maxt: 9}},
 			remaint:   []int64{},
 		},
 	}
@@ -288,7 +290,7 @@ Outer:
 
 		// TODO(gouthamve): Reset the tombstones somehow.
 		// Delete the ranges.
-		for _, r := range c.intervals {
+		for _, r := range c.Intervals {
 			testutil.Ok(t, db.Delete(r.Mint, r.Maxt, labels.NewEqualMatcher("a", "b")))
 		}
 
@@ -561,11 +563,11 @@ func TestDB_SnapshotWithDelete(t *testing.T) {
 
 	testutil.Ok(t, app.Commit())
 	cases := []struct {
-		intervals Intervals
+		intervals tombstones.Intervals
 		remaint   []int64
 	}{
 		{
-			intervals: Intervals{{1, 3}, {4, 7}},
+			intervals: tombstones.Intervals{{Mint: 1, Maxt: 3}, {Mint: 4, Maxt: 7}},
 			remaint:   []int64{0, 8, 9},
 		},
 	}
@@ -888,11 +890,11 @@ func TestTombstoneClean(t *testing.T) {
 
 	testutil.Ok(t, app.Commit())
 	cases := []struct {
-		intervals Intervals
+		intervals tombstones.Intervals
 		remaint   []int64
 	}{
 		{
-			intervals: Intervals{{1, 3}, {4, 7}},
+			intervals: tombstones.Intervals{{Mint: 1, Maxt: 3}, {Mint: 4, Maxt: 7}},
 			remaint:   []int64{0, 8, 9},
 		},
 	}
@@ -964,7 +966,7 @@ func TestTombstoneClean(t *testing.T) {
 		}
 
 		for _, b := range db.Blocks() {
-			testutil.Equals(t, newMemTombstones(), b.tombstones)
+			testutil.Equals(t, tombstones.NewMemTombstones(), b.tombstones)
 		}
 	}
 }
@@ -990,8 +992,8 @@ func TestTombstoneCleanFail(t *testing.T) {
 		block, err := OpenBlock(nil, blockDir, nil)
 		testutil.Ok(t, err)
 		// Add some some fake tombstones to trigger the compaction.
-		tomb := newMemTombstones()
-		tomb.addInterval(0, Interval{0, 1})
+		tomb := tombstones.NewMemTombstones()
+		tomb.AddInterval(0, tombstones.Interval{Mint: 0, Maxt: 1})
 		block.tombstones = tomb
 
 		db.blocks = append(db.blocks, block)
@@ -1112,7 +1114,7 @@ func TestSizeRetention(t *testing.T) {
 	// Test that registered size matches the actual disk size.
 	testutil.Ok(t, db.reload())                                       // Reload the db to register the new db size.
 	testutil.Equals(t, len(blocks), len(db.Blocks()))                 // Ensure all blocks are registered.
-	expSize := int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the the actual internal metrics.
+	expSize := int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
 	actSize := testutil.DirSize(t, db.Dir())
 	testutil.Equals(t, expSize, actSize, "registered size doesn't match actual disk size")
 
@@ -1470,13 +1472,13 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		w, err := wal.New(nil, nil, path.Join(dir, "wal"), false)
 		testutil.Ok(t, err)
 
-		var enc RecordEncoder
+		var enc record.Encoder
 		err = w.Log(
-			enc.Series([]RefSeries{
+			enc.Series([]record.RefSeries{
 				{Ref: 123, Labels: labels.FromStrings("a", "1")},
 				{Ref: 124, Labels: labels.FromStrings("a", "2")},
 			}, nil),
-			enc.Samples([]RefSample{
+			enc.Samples([]record.RefSample{
 				{Ref: 123, T: 5000, V: 1},
 				{Ref: 124, T: 15000, V: 1},
 			}, nil),
@@ -1520,13 +1522,13 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		w, err := wal.New(nil, nil, path.Join(dir, "wal"), false)
 		testutil.Ok(t, err)
 
-		var enc RecordEncoder
+		var enc record.Encoder
 		err = w.Log(
-			enc.Series([]RefSeries{
+			enc.Series([]record.RefSeries{
 				{Ref: 123, Labels: labels.FromStrings("a", "1")},
 				{Ref: 124, Labels: labels.FromStrings("a", "2")},
 			}, nil),
-			enc.Samples([]RefSample{
+			enc.Samples([]record.RefSample{
 				{Ref: 123, T: 5000, V: 1},
 				{Ref: 124, T: 15000, V: 1},
 			}, nil),
@@ -2358,4 +2360,77 @@ func TestDBReadOnlyClosing(t *testing.T) {
 	testutil.Equals(t, err, ErrClosed)
 	_, err = db.Querier(0, 1)
 	testutil.Equals(t, err, ErrClosed)
+}
+
+func TestDBReadOnly_FlushWAL(t *testing.T) {
+	var (
+		dbDir  string
+		logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+		err    error
+		maxt   int
+	)
+
+	// Boostrap the db.
+	{
+		dbDir, err = ioutil.TempDir("", "test")
+		testutil.Ok(t, err)
+
+		defer func() {
+			testutil.Ok(t, os.RemoveAll(dbDir))
+		}()
+
+		// Append data to the WAL.
+		db, err := Open(dbDir, logger, nil, nil)
+		testutil.Ok(t, err)
+		db.DisableCompactions()
+		app := db.Appender()
+		maxt = 1000
+		for i := 0; i < maxt; i++ {
+			_, err := app.Add(labels.FromStrings(defaultLabelName, "flush"), int64(i), 1.0)
+			testutil.Ok(t, err)
+		}
+		testutil.Ok(t, app.Commit())
+		defer func() { testutil.Ok(t, db.Close()) }()
+	}
+
+	// Flush WAL.
+	db, err := OpenDBReadOnly(dbDir, logger)
+	testutil.Ok(t, err)
+
+	flush, err := ioutil.TempDir("", "flush")
+	testutil.Ok(t, err)
+
+	defer func() {
+		testutil.Ok(t, os.RemoveAll(flush))
+	}()
+	testutil.Ok(t, db.FlushWAL(flush))
+	testutil.Ok(t, db.Close())
+
+	// Reopen the DB from the flushed WAL block.
+	db, err = OpenDBReadOnly(flush, logger)
+	testutil.Ok(t, err)
+	defer func() { testutil.Ok(t, db.Close()) }()
+	blocks, err := db.Blocks()
+	testutil.Ok(t, err)
+	testutil.Equals(t, len(blocks), 1)
+
+	querier, err := db.Querier(0, int64(maxt)-1)
+	testutil.Ok(t, err)
+	defer func() { testutil.Ok(t, querier.Close()) }()
+
+	// Sum the values.
+	seriesSet, err := querier.Select(labels.NewEqualMatcher(defaultLabelName, "flush"))
+	testutil.Ok(t, err)
+
+	sum := 0.0
+	for seriesSet.Next() {
+		series := seriesSet.At().Iterator()
+		for series.Next() {
+			_, v := series.At()
+			sum += v
+		}
+		testutil.Ok(t, series.Err())
+	}
+	testutil.Ok(t, seriesSet.Err())
+	testutil.Equals(t, 1000.0, sum)
 }

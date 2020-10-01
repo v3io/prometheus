@@ -113,7 +113,7 @@ func TestMMapFile(t *testing.T) {
 	filename := file.Name()
 	defer os.Remove(filename)
 
-	err, fileAsBytes := getMMapedFile(filename, 2, nil)
+	fileAsBytes, err := getMMapedFile(filename, 2, nil)
 
 	if err != nil {
 		t.Fatalf("Couldn't create test mmaped file")
@@ -134,5 +134,45 @@ func TestMMapFile(t *testing.T) {
 
 	if string(bytes[:2]) != string(fileAsBytes) {
 		t.Fatalf("Mmap failed")
+	}
+}
+
+func TestParseBrokenJson(t *testing.T) {
+	for _, tc := range []struct {
+		b []byte
+
+		ok  bool
+		out string
+	}{
+		{
+			b: []byte(""),
+		},
+		{
+			b: []byte("\x00\x00"),
+		},
+		{
+			b: []byte("\x00[\x00"),
+		},
+		{
+			b:   []byte("\x00[]\x00"),
+			ok:  true,
+			out: "[]",
+		},
+		{
+			b:   []byte("[\"up == 0\",\"rate(http_requests[2w]\"]\x00\x00\x00"),
+			ok:  true,
+			out: "[\"up == 0\",\"rate(http_requests[2w]\"]",
+		},
+	} {
+		t.Run("", func(t *testing.T) {
+			ok, out := parseBrokenJson(tc.b)
+			if tc.ok != ok {
+				t.Fatalf("expected %t, got %t", tc.ok, ok)
+				return
+			}
+			if ok && tc.out != out {
+				t.Fatalf("expected %s, got %s", tc.out, out)
+			}
+		})
 	}
 }

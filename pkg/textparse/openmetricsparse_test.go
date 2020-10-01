@@ -370,6 +370,22 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 			input: "empty_label_name{=\"\"} 0",
 			err:   "expected label name or left brace, got \"EQUAL\"",
 		},
+		{
+			input: "foo 1_2\n",
+			err:   "unsupported character in float",
+		},
+		{
+			input: "foo 0x1p-3\n",
+			err:   "unsupported character in float",
+		},
+		{
+			input: "foo 0x1P-3\n",
+			err:   "unsupported character in float",
+		},
+		{
+			input: "foo 0 1_2\n",
+			err:   "unsupported character in float",
+		},
 	}
 
 	for i, c := range cases {
@@ -418,6 +434,14 @@ func TestOMNullByteHandling(t *testing.T) {
 		{
 			input: "a\x00{b=\"ddd\"} 1",
 			err:   "expected value after metric, got \"MNAME\"",
+		},
+		{
+			input: "#",
+			err:   "\"INVALID\" \" \" is not a valid start token",
+		},
+		{
+			input: "# H",
+			err:   "\"INVALID\" \" \" is not a valid start token",
 		},
 	}
 

@@ -249,6 +249,22 @@ func TestPromParseErrors(t *testing.T) {
 			input: "empty_label_name{=\"\"} 0",
 			err:   "expected label name, got \"EQUAL\"",
 		},
+		{
+			input: "foo 1_2\n",
+			err:   "unsupported character in float",
+		},
+		{
+			input: "foo 0x1p-3\n",
+			err:   "unsupported character in float",
+		},
+		{
+			input: "foo 0x1P-3\n",
+			err:   "unsupported character in float",
+		},
+		{
+			input: "foo 0 1_2\n",
+			err:   "expected next entry after timestamp, got \"MNAME\"",
+		},
 	}
 
 	for i, c := range cases {
@@ -257,7 +273,7 @@ func TestPromParseErrors(t *testing.T) {
 		for err == nil {
 			_, err = p.Next()
 		}
-		testutil.NotOk(t, err, "")
+		testutil.NotOk(t, err)
 		testutil.Equals(t, c.err, err.Error(), "test %d", i)
 	}
 }
@@ -313,7 +329,7 @@ func TestPromNullByteHandling(t *testing.T) {
 			continue
 		}
 
-		testutil.NotOk(t, err, "")
+		testutil.NotOk(t, err)
 		testutil.Equals(t, c.err, err.Error(), "test %d", i)
 	}
 }
