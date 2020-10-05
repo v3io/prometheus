@@ -426,6 +426,8 @@ func New(logger log.Logger, o *Options) *Handler {
 	router.Get("/debug/*subpath", serveDebug)
 	router.Post("/debug/*subpath", serveDebug)
 
+	client := &http.Client{}
+
 	router.Get("/-/healthy", func(w http.ResponseWriter, r *http.Request) {
 		if o.V3ioConfig == nil {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -449,7 +451,6 @@ func New(logger log.Logger, o *Options) *Handler {
 			base64UserPassword := base64.StdEncoding.EncodeToString([]byte(o.V3ioConfig.Username + ":" + o.V3ioConfig.Password))
 			req.Header.Add("Authorization", "Basic "+base64UserPassword)
 		}
-		client := &http.Client{}
 		resp, err := client.Do(req)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -457,6 +458,13 @@ func New(logger log.Logger, o *Options) *Handler {
 			fmt.Fprintf(w, "Prometheus is Unhealthy: %v\n", err)
 			return
 		}
+
+		// https://golang.org/pkg/net/http/:
+		// It is the caller's responsibility to close Body. The default HTTP client's Transport may not
+		// reuse HTTP/1.x "keep-alive" TCP connections if the Body is not read to completion and closed.
+		_, _ = ioutil.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+
 		if resp.StatusCode != http.StatusOK {
 			w.WriteHeader(http.StatusInternalServerError)
 			level.Warn(h.logger).Log("msg", "Prometheus is Unhealthy because it could not find schema file.", "schemaUrl", schemaUrl, "response", resp)
