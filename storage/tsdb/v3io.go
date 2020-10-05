@@ -26,7 +26,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb"
 
 	"github.com/alecthomas/units"
 	"github.com/go-kit/kit/log"
@@ -137,7 +137,7 @@ func (s *ReadyStorage) Querier(ctx context.Context, mint, maxt int64) (storage.Q
 
 // Appender implements the Storage interface.
 func (s *ReadyStorage) Appender() (storage.Appender, error) {
-	s.logger.Log("msg", "Appended requested")
+	s.logger.Log("msg", "Appender requested")
 
 	if s.error != nil {
 		return nil, errors.Wrap(s.error, "cannot return an appender without an adapter")
@@ -266,6 +266,9 @@ type Options struct {
 	// When true it disables the overlapping blocks check.
 	// This in-turn enables vertical compaction and vertical query merge.
 	AllowOverlappingBlocks bool
+
+	// When true records in the WAL will be compressed.
+	WALCompression bool
 }
 
 // Open returns a new storage backed by a TSDB database that is configured for Prometheus.

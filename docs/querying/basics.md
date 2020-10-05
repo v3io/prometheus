@@ -88,8 +88,8 @@ against regular expressions. The following label matching operators exist:
 
 * `=`: Select labels that are exactly equal to the provided string.
 * `!=`: Select labels that are not equal to the provided string.
-* `=~`: Select labels that regex-match the provided string (or substring).
-* `!~`: Select labels that do not regex-match the provided string (or substring).
+* `=~`: Select labels that regex-match the provided string.
+* `!~`: Select labels that do not regex-match the provided string.
 
 For example, this selects all `http_requests_total` time series for `staging`,
 `testing`, and `development` environments and HTTP methods other than `GET`.
@@ -165,7 +165,7 @@ While the following would be *incorrect*:
 
     sum(http_requests_total{method="GET"}) offset 5m // INVALID.
 
-The same works for range vectors. This returns the 5-minutes rate that
+The same works for range vectors. This returns the 5-minute rate that
 `http_requests_total` had a week ago:
 
     rate(http_requests_total[5m] offset 1w)
@@ -187,6 +187,12 @@ in detail in the [expression language operators](operators.md) page.
 
 Prometheus supports several functions to operate on data. These are described
 in detail in the [expression language functions](functions.md) page.
+
+## Comments
+
+PromQL supports line comments that start with `#`. Example:
+
+        # This is a comment
 
 ## Gotchas
 

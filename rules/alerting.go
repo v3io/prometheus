@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,6 +27,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -71,7 +73,7 @@ func (s AlertState) String() string {
 	case StateFiring:
 		return "firing"
 	}
-	panic(fmt.Errorf("unknown alert state: %v", s.String()))
+	panic(errors.Errorf("unknown alert state: %s", s.String()))
 }
 
 // Alert is the user-level representation of a single instance of an alerting rule.
@@ -118,6 +120,8 @@ type AlertingRule struct {
 	labels labels.Labels
 	// Non-identifying key/value pairs.
 	annotations labels.Labels
+	// External labels from the global config.
+	externalLabels map[string]string
 	// true if old state has been restored. We start persisting samples for ALERT_FOR_STATE
 	// only after the restoration.
 	restored bool
@@ -139,17 +143,27 @@ type AlertingRule struct {
 }
 
 // NewAlertingRule constructs a new AlertingRule.
-func NewAlertingRule(name string, vec promql.Expr, hold time.Duration, lbls, anns labels.Labels, restored bool, logger log.Logger) *AlertingRule {
+func NewAlertingRule(
+	name string, vec promql.Expr, hold time.Duration,
+	labels, annotations, externalLabels labels.Labels,
+	restored bool, logger log.Logger,
+) *AlertingRule {
+	el := make(map[string]string, len(externalLabels))
+	for _, lbl := range externalLabels {
+		el[lbl.Name] = lbl.Value
+	}
+
 	return &AlertingRule{
-		name:         name,
-		vector:       vec,
-		holdDuration: hold,
-		labels:       lbls,
-		annotations:  anns,
-		health:       HealthUnknown,
-		active:       map[uint64]*Alert{},
-		logger:       logger,
-		restored:     restored,
+		name:           name,
+		vector:         vec,
+		holdDuration:   hold,
+		labels:         labels,
+		annotations:    annotations,
+		externalLabels: el,
+		health:         HealthUnknown,
+		active:         map[uint64]*Alert{},
+		logger:         logger,
+		restored:       restored,
 	}
 }
 
@@ -276,7 +290,7 @@ func (r *AlertingRule) SetRestored(restored bool) {
 }
 
 // resolvedRetention is the duration for which a resolved alert instance
-// is kept in memory state and consequentally repeatedly sent to the AlertManager.
+// is kept in memory state and consequently repeatedly sent to the AlertManager.
 const resolvedRetention = 15 * time.Minute
 
 // Eval evaluates the rule expression and then creates pending alerts and fires
@@ -297,6 +311,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 	resultFPs := map[uint64]struct{}{}
 
 	var vec promql.Vector
+	var alerts = make(map[uint64]*Alert, len(res))
 	for _, smpl := range res {
 		// Provide the alert information to the template.
 		l := make(map[string]string, len(smpl.Metric))
@@ -304,15 +319,19 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 			l[lbl.Name] = lbl.Value
 		}
 
-		tmplData := template.AlertTemplateData(l, smpl.V)
+		tmplData := template.AlertTemplateData(l, r.externalLabels, smpl.V)
 		// Inject some convenience variables that are easier to remember for users
 		// who are not used to Go's templating system.
-		defs := "{{$labels := .Labels}}{{$value := .Value}}"
+		defs := []string{
+			"{{$labels := .Labels}}",
+			"{{$externalLabels := .ExternalLabels}}",
+			"{{$value := .Value}}",
+		}
 
 		expand := func(text string) string {
 			tmpl := template.NewTemplateExpander(
 				ctx,
-				defs+text,
+				strings.Join(append(defs, text), ""),
 				"__alert_"+r.Name(),
 				tmplData,
 				model.Time(timestamp.FromTime(ts)),
@@ -343,21 +362,34 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		h := lbs.Hash()
 		resultFPs[h] = struct{}{}
 
-		// Check whether we already have alerting state for the identifying label set.
-		// Update the last value and annotations if so, create a new alert entry otherwise.
-		if alert, ok := r.active[h]; ok && alert.State != StateInactive {
-			alert.Value = smpl.V
-			alert.Annotations = annotations
-			continue
+		if _, ok := alerts[h]; ok {
+			err = fmt.Errorf("vector contains metrics with the same labelset after applying alert labels")
+			// We have already acquired the lock above hence using SetHealth and
+			// SetLastError will deadlock.
+			r.health = HealthBad
+			r.lastError = err
+			return nil, err
 		}
 
-		r.active[h] = &Alert{
+		alerts[h] = &Alert{
 			Labels:      lbs,
 			Annotations: annotations,
 			ActiveAt:    ts,
 			State:       StatePending,
 			Value:       smpl.V,
 		}
+	}
+
+	for h, a := range alerts {
+		// Check whether we already have alerting state for the identifying label set.
+		// Update the last value and annotations if so, create a new alert entry otherwise.
+		if alert, ok := r.active[h]; ok && alert.State != StateInactive {
+			alert.Value = a.Value
+			alert.Annotations = a.Annotations
+			continue
+		}
+
+		r.active[h] = a
 	}
 
 	// Check if any pending alerts should be removed or fire now. Write out alert timeseries.
@@ -448,7 +480,7 @@ func (r *AlertingRule) ForEachActiveAlert(f func(*Alert)) {
 }
 
 func (r *AlertingRule) sendAlerts(ctx context.Context, ts time.Time, resendDelay time.Duration, interval time.Duration, notifyFunc NotifyFunc) {
-	alerts := make([]*Alert, 0)
+	alerts := []*Alert{}
 	r.ForEachActiveAlert(func(alert *Alert) {
 		if alert.needsSending(ts, resendDelay) {
 			alert.LastSentAt = ts

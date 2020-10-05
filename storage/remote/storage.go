@@ -15,6 +15,10 @@ package remote
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"sync"
 	"time"
 
@@ -28,6 +32,14 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
+// String constants for instrumentation.
+const (
+	namespace  = "prometheus"
+	subsystem  = "remote_storage"
+	remoteName = "remote_name"
+	endpoint   = "url"
+)
+
 // startTimeCallback is a callback func that return the oldest timestamp stored in a storage.
 type startTimeCallback func() (int64, error)
 
@@ -37,11 +49,7 @@ type Storage struct {
 	logger log.Logger
 	mtx    sync.Mutex
 
-	// For writes
-	walDir        string
-	queues        []*QueueManager
-	samplesIn     *ewmaRate
-	flushDeadline time.Duration
+	rws *WriteStorage
 
 	// For reads
 	queryables             []storage.Queryable
@@ -56,20 +64,9 @@ func NewStorage(l log.Logger, reg prometheus.Registerer, stCallback startTimeCal
 	s := &Storage{
 		logger:                 logging.Dedupe(l, 1*time.Minute),
 		localStartTimeCallback: stCallback,
-		flushDeadline:          flushDeadline,
-		samplesIn:              newEWMARate(ewmaWeight, shardUpdateDuration),
-		walDir:                 walDir,
 	}
-	go s.run()
+	s.rws = NewWriteStorage(s.logger, walDir, flushDeadline)
 	return s
-}
-
-func (s *Storage) run() {
-	ticker := time.NewTicker(shardUpdateDuration)
-	defer ticker.Stop()
-	for range ticker.C {
-		s.samplesIn.tick()
-	}
 }
 
 // ApplyConfig updates the state as the new config requires.
@@ -77,44 +74,34 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	// Update write queues
-	newQueues := []*QueueManager{}
-	// TODO: we should only stop & recreate queues which have changes,
-	// as this can be quite disruptive.
-	for i, rwConf := range conf.RemoteWriteConfigs {
-		c, err := NewClient(i, &ClientConfig{
-			URL:              rwConf.URL,
-			Timeout:          rwConf.RemoteTimeout,
-			HTTPClientConfig: rwConf.HTTPClientConfig,
-		})
-		if err != nil {
-			return err
-		}
-		newQueues = append(newQueues, NewQueueManager(
-			s.logger,
-			s.walDir,
-			s.samplesIn,
-			rwConf.QueueConfig,
-			conf.GlobalConfig.ExternalLabels,
-			rwConf.WriteRelabelConfigs,
-			c,
-			s.flushDeadline,
-		))
-	}
-
-	for _, q := range s.queues {
-		q.Stop()
-	}
-
-	s.queues = newQueues
-	for _, q := range s.queues {
-		q.Start()
+	if err := s.rws.ApplyConfig(conf); err != nil {
+		return err
 	}
 
 	// Update read clients
+	readHashes := make(map[string]struct{})
 	queryables := make([]storage.Queryable, 0, len(conf.RemoteReadConfigs))
-	for i, rrConf := range conf.RemoteReadConfigs {
-		c, err := NewClient(i, &ClientConfig{
+	for _, rrConf := range conf.RemoteReadConfigs {
+		hash, err := toHash(rrConf)
+		if err != nil {
+			return nil
+		}
+
+		// Don't allow duplicate remote read configs.
+		if _, ok := readHashes[hash]; ok {
+			return fmt.Errorf("duplicate remote read configs are not allowed, found duplicate for URL: %s", rrConf.URL)
+		}
+		readHashes[hash] = struct{}{}
+
+		// Set the queue name to the config hash if the user has not set
+		// a name in their remote write config so we can still differentiate
+		// between queues that have the same remote write endpoint.
+		name := string(hash[:6])
+		if rrConf.Name != "" {
+			name = rrConf.Name
+		}
+
+		c, err := NewClient(name, &ClientConfig{
 			URL:              rrConf.URL,
 			Timeout:          rrConf.RemoteTimeout,
 			HTTPClientConfig: rrConf.HTTPClientConfig,
@@ -161,16 +148,16 @@ func (s *Storage) Querier(ctx context.Context, mint, maxt int64) (storage.Querie
 	return storage.NewMergeQuerier(nil, queriers), nil
 }
 
+// Appender implements storage.Storage.
+func (s *Storage) Appender() (storage.Appender, error) {
+	return s.rws.Appender()
+}
+
 // Close the background processing of the storage queues.
 func (s *Storage) Close() error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
-
-	for _, q := range s.queues {
-		q.Stop()
-	}
-
-	return nil
+	return s.rws.Close()
 }
 
 func labelsToEqualityMatchers(ls model.LabelSet) []*labels.Matcher {
@@ -183,4 +170,14 @@ func labelsToEqualityMatchers(ls model.LabelSet) []*labels.Matcher {
 		})
 	}
 	return ms
+}
+
+// Used for hashing configs and diff'ing hashes in ApplyConfig.
+func toHash(data interface{}) (string, error) {
+	bytes, err := json.Marshal(data)
+	if err != nil {
+		return "", err
+	}
+	hash := md5.Sum(bytes)
+	return hex.EncodeToString(hash[:]), nil
 }

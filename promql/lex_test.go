@@ -14,14 +14,14 @@
 package promql
 
 import (
-	"fmt"
-	"reflect"
 	"testing"
+
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 type testCase struct {
 	input      string
-	expected   []item
+	expected   []Item
 	fail       bool
 	seriesDesc bool // Whether to lex a series description.
 }
@@ -35,23 +35,44 @@ var tests = []struct {
 		tests: []testCase{
 			{
 				input:    ",",
-				expected: []item{{itemComma, 0, ","}},
+				expected: []Item{{COMMA, 0, ","}},
 			}, {
 				input:    "()",
-				expected: []item{{itemLeftParen, 0, `(`}, {itemRightParen, 1, `)`}},
+				expected: []Item{{LEFT_PAREN, 0, `(`}, {RIGHT_PAREN, 1, `)`}},
 			}, {
 				input:    "{}",
-				expected: []item{{itemLeftBrace, 0, `{`}, {itemRightBrace, 1, `}`}},
+				expected: []Item{{LEFT_BRACE, 0, `{`}, {RIGHT_BRACE, 1, `}`}},
 			}, {
 				input: "[5m]",
-				expected: []item{
-					{itemLeftBracket, 0, `[`},
-					{itemDuration, 1, `5m`},
-					{itemRightBracket, 3, `]`},
+				expected: []Item{
+					{LEFT_BRACKET, 0, `[`},
+					{DURATION, 1, `5m`},
+					{RIGHT_BRACKET, 3, `]`},
+				},
+			}, {
+				input: "[ 5m]",
+				expected: []Item{
+					{LEFT_BRACKET, 0, `[`},
+					{DURATION, 2, `5m`},
+					{RIGHT_BRACKET, 4, `]`},
+				},
+			}, {
+				input: "[  5m]",
+				expected: []Item{
+					{LEFT_BRACKET, 0, `[`},
+					{DURATION, 3, `5m`},
+					{RIGHT_BRACKET, 5, `]`},
+				},
+			}, {
+				input: "[  5m ]",
+				expected: []Item{
+					{LEFT_BRACKET, 0, `[`},
+					{DURATION, 3, `5m`},
+					{RIGHT_BRACKET, 6, `]`},
 				},
 			}, {
 				input:    "\r\n\r",
-				expected: []item{},
+				expected: []Item{},
 			},
 		},
 	},
@@ -60,55 +81,55 @@ var tests = []struct {
 		tests: []testCase{
 			{
 				input:    "1",
-				expected: []item{{itemNumber, 0, "1"}},
+				expected: []Item{{NUMBER, 0, "1"}},
 			}, {
 				input:    "4.23",
-				expected: []item{{itemNumber, 0, "4.23"}},
+				expected: []Item{{NUMBER, 0, "4.23"}},
 			}, {
 				input:    ".3",
-				expected: []item{{itemNumber, 0, ".3"}},
+				expected: []Item{{NUMBER, 0, ".3"}},
 			}, {
 				input:    "5.",
-				expected: []item{{itemNumber, 0, "5."}},
+				expected: []Item{{NUMBER, 0, "5."}},
 			}, {
 				input:    "NaN",
-				expected: []item{{itemNumber, 0, "NaN"}},
+				expected: []Item{{NUMBER, 0, "NaN"}},
 			}, {
 				input:    "nAN",
-				expected: []item{{itemNumber, 0, "nAN"}},
+				expected: []Item{{NUMBER, 0, "nAN"}},
 			}, {
 				input:    "NaN 123",
-				expected: []item{{itemNumber, 0, "NaN"}, {itemNumber, 4, "123"}},
+				expected: []Item{{NUMBER, 0, "NaN"}, {NUMBER, 4, "123"}},
 			}, {
 				input:    "NaN123",
-				expected: []item{{itemIdentifier, 0, "NaN123"}},
+				expected: []Item{{IDENTIFIER, 0, "NaN123"}},
 			}, {
 				input:    "iNf",
-				expected: []item{{itemNumber, 0, "iNf"}},
+				expected: []Item{{NUMBER, 0, "iNf"}},
 			}, {
 				input:    "Inf",
-				expected: []item{{itemNumber, 0, "Inf"}},
+				expected: []Item{{NUMBER, 0, "Inf"}},
 			}, {
 				input:    "+Inf",
-				expected: []item{{itemADD, 0, "+"}, {itemNumber, 1, "Inf"}},
+				expected: []Item{{ADD, 0, "+"}, {NUMBER, 1, "Inf"}},
 			}, {
 				input:    "+Inf 123",
-				expected: []item{{itemADD, 0, "+"}, {itemNumber, 1, "Inf"}, {itemNumber, 5, "123"}},
+				expected: []Item{{ADD, 0, "+"}, {NUMBER, 1, "Inf"}, {NUMBER, 5, "123"}},
 			}, {
 				input:    "-Inf",
-				expected: []item{{itemSUB, 0, "-"}, {itemNumber, 1, "Inf"}},
+				expected: []Item{{SUB, 0, "-"}, {NUMBER, 1, "Inf"}},
 			}, {
 				input:    "Infoo",
-				expected: []item{{itemIdentifier, 0, "Infoo"}},
+				expected: []Item{{IDENTIFIER, 0, "Infoo"}},
 			}, {
 				input:    "-Infoo",
-				expected: []item{{itemSUB, 0, "-"}, {itemIdentifier, 1, "Infoo"}},
+				expected: []Item{{SUB, 0, "-"}, {IDENTIFIER, 1, "Infoo"}},
 			}, {
 				input:    "-Inf 123",
-				expected: []item{{itemSUB, 0, "-"}, {itemNumber, 1, "Inf"}, {itemNumber, 5, "123"}},
+				expected: []Item{{SUB, 0, "-"}, {NUMBER, 1, "Inf"}, {NUMBER, 5, "123"}},
 			}, {
 				input:    "0x123",
-				expected: []item{{itemNumber, 0, "0x123"}},
+				expected: []Item{{NUMBER, 0, "0x123"}},
 			},
 		},
 	},
@@ -117,22 +138,22 @@ var tests = []struct {
 		tests: []testCase{
 			{
 				input:    "\"test\\tsequence\"",
-				expected: []item{{itemString, 0, `"test\tsequence"`}},
+				expected: []Item{{STRING, 0, `"test\tsequence"`}},
 			},
 			{
 				input:    "\"test\\\\.expression\"",
-				expected: []item{{itemString, 0, `"test\\.expression"`}},
+				expected: []Item{{STRING, 0, `"test\\.expression"`}},
 			},
 			{
 				input: "\"test\\.expression\"",
-				expected: []item{
-					{itemError, 0, "unknown escape sequence U+002E '.'"},
-					{itemString, 0, `"test\.expression"`},
+				expected: []Item{
+					{ERROR, 0, "unknown escape sequence U+002E '.'"},
+					{STRING, 0, `"test\.expression"`},
 				},
 			},
 			{
 				input:    "`test\\.expression`",
-				expected: []item{{itemString, 0, "`test\\.expression`"}},
+				expected: []Item{{STRING, 0, "`test\\.expression`"}},
 			},
 			{
 				// See https://github.com/prometheus/prometheus/issues/939.
@@ -146,19 +167,19 @@ var tests = []struct {
 		tests: []testCase{
 			{
 				input:    "5s",
-				expected: []item{{itemDuration, 0, "5s"}},
+				expected: []Item{{DURATION, 0, "5s"}},
 			}, {
 				input:    "123m",
-				expected: []item{{itemDuration, 0, "123m"}},
+				expected: []Item{{DURATION, 0, "123m"}},
 			}, {
 				input:    "1h",
-				expected: []item{{itemDuration, 0, "1h"}},
+				expected: []Item{{DURATION, 0, "1h"}},
 			}, {
 				input:    "3w",
-				expected: []item{{itemDuration, 0, "3w"}},
+				expected: []Item{{DURATION, 0, "3w"}},
 			}, {
 				input:    "1y",
-				expected: []item{{itemDuration, 0, "1y"}},
+				expected: []Item{{DURATION, 0, "1y"}},
 			},
 		},
 	},
@@ -167,16 +188,16 @@ var tests = []struct {
 		tests: []testCase{
 			{
 				input:    "abc",
-				expected: []item{{itemIdentifier, 0, "abc"}},
+				expected: []Item{{IDENTIFIER, 0, "abc"}},
 			}, {
 				input:    "a:bc",
-				expected: []item{{itemMetricIdentifier, 0, "a:bc"}},
+				expected: []Item{{METRIC_IDENTIFIER, 0, "a:bc"}},
 			}, {
 				input:    "abc d",
-				expected: []item{{itemIdentifier, 0, "abc"}, {itemIdentifier, 4, "d"}},
+				expected: []Item{{IDENTIFIER, 0, "abc"}, {IDENTIFIER, 4, "d"}},
 			}, {
 				input:    ":bc",
-				expected: []item{{itemMetricIdentifier, 0, ":bc"}},
+				expected: []Item{{METRIC_IDENTIFIER, 0, ":bc"}},
 			}, {
 				input: "0a:bc",
 				fail:  true,
@@ -188,13 +209,13 @@ var tests = []struct {
 		tests: []testCase{
 			{
 				input:    "# some comment",
-				expected: []item{{itemComment, 0, "# some comment"}},
+				expected: []Item{{COMMENT, 0, "# some comment"}},
 			}, {
 				input: "5 # 1+1\n5",
-				expected: []item{
-					{itemNumber, 0, "5"},
-					{itemComment, 2, "# 1+1"},
-					{itemNumber, 8, "5"},
+				expected: []Item{
+					{NUMBER, 0, "5"},
+					{COMMENT, 2, "# 1+1"},
+					{NUMBER, 8, "5"},
 				},
 			},
 		},
@@ -204,56 +225,56 @@ var tests = []struct {
 		tests: []testCase{
 			{
 				input:    `=`,
-				expected: []item{{itemAssign, 0, `=`}},
+				expected: []Item{{ASSIGN, 0, `=`}},
 			}, {
 				// Inside braces equality is a single '=' character.
 				input:    `{=}`,
-				expected: []item{{itemLeftBrace, 0, `{`}, {itemEQL, 1, `=`}, {itemRightBrace, 2, `}`}},
+				expected: []Item{{LEFT_BRACE, 0, `{`}, {EQL, 1, `=`}, {RIGHT_BRACE, 2, `}`}},
 			}, {
 				input:    `==`,
-				expected: []item{{itemEQL, 0, `==`}},
+				expected: []Item{{EQL, 0, `==`}},
 			}, {
 				input:    `!=`,
-				expected: []item{{itemNEQ, 0, `!=`}},
+				expected: []Item{{NEQ, 0, `!=`}},
 			}, {
 				input:    `<`,
-				expected: []item{{itemLSS, 0, `<`}},
+				expected: []Item{{LSS, 0, `<`}},
 			}, {
 				input:    `>`,
-				expected: []item{{itemGTR, 0, `>`}},
+				expected: []Item{{GTR, 0, `>`}},
 			}, {
 				input:    `>=`,
-				expected: []item{{itemGTE, 0, `>=`}},
+				expected: []Item{{GTE, 0, `>=`}},
 			}, {
 				input:    `<=`,
-				expected: []item{{itemLTE, 0, `<=`}},
+				expected: []Item{{LTE, 0, `<=`}},
 			}, {
 				input:    `+`,
-				expected: []item{{itemADD, 0, `+`}},
+				expected: []Item{{ADD, 0, `+`}},
 			}, {
 				input:    `-`,
-				expected: []item{{itemSUB, 0, `-`}},
+				expected: []Item{{SUB, 0, `-`}},
 			}, {
 				input:    `*`,
-				expected: []item{{itemMUL, 0, `*`}},
+				expected: []Item{{MUL, 0, `*`}},
 			}, {
 				input:    `/`,
-				expected: []item{{itemDIV, 0, `/`}},
+				expected: []Item{{DIV, 0, `/`}},
 			}, {
 				input:    `^`,
-				expected: []item{{itemPOW, 0, `^`}},
+				expected: []Item{{POW, 0, `^`}},
 			}, {
 				input:    `%`,
-				expected: []item{{itemMOD, 0, `%`}},
+				expected: []Item{{MOD, 0, `%`}},
 			}, {
 				input:    `AND`,
-				expected: []item{{itemLAND, 0, `AND`}},
+				expected: []Item{{LAND, 0, `AND`}},
 			}, {
 				input:    `or`,
-				expected: []item{{itemLOR, 0, `or`}},
+				expected: []Item{{LOR, 0, `or`}},
 			}, {
 				input:    `unless`,
-				expected: []item{{itemLUnless, 0, `unless`}},
+				expected: []Item{{LUNLESS, 0, `unless`}},
 			},
 		},
 	},
@@ -262,25 +283,25 @@ var tests = []struct {
 		tests: []testCase{
 			{
 				input:    `sum`,
-				expected: []item{{itemSum, 0, `sum`}},
+				expected: []Item{{SUM, 0, `sum`}},
 			}, {
 				input:    `AVG`,
-				expected: []item{{itemAvg, 0, `AVG`}},
+				expected: []Item{{AVG, 0, `AVG`}},
 			}, {
 				input:    `MAX`,
-				expected: []item{{itemMax, 0, `MAX`}},
+				expected: []Item{{MAX, 0, `MAX`}},
 			}, {
 				input:    `min`,
-				expected: []item{{itemMin, 0, `min`}},
+				expected: []Item{{MIN, 0, `min`}},
 			}, {
 				input:    `count`,
-				expected: []item{{itemCount, 0, `count`}},
+				expected: []Item{{COUNT, 0, `count`}},
 			}, {
 				input:    `stdvar`,
-				expected: []item{{itemStdvar, 0, `stdvar`}},
+				expected: []Item{{STDVAR, 0, `stdvar`}},
 			}, {
 				input:    `stddev`,
-				expected: []item{{itemStddev, 0, `stddev`}},
+				expected: []Item{{STDDEV, 0, `stddev`}},
 			},
 		},
 	},
@@ -289,28 +310,28 @@ var tests = []struct {
 		tests: []testCase{
 			{
 				input:    "offset",
-				expected: []item{{itemOffset, 0, "offset"}},
+				expected: []Item{{OFFSET, 0, "offset"}},
 			}, {
 				input:    "by",
-				expected: []item{{itemBy, 0, "by"}},
+				expected: []Item{{BY, 0, "by"}},
 			}, {
 				input:    "without",
-				expected: []item{{itemWithout, 0, "without"}},
+				expected: []Item{{WITHOUT, 0, "without"}},
 			}, {
 				input:    "on",
-				expected: []item{{itemOn, 0, "on"}},
+				expected: []Item{{ON, 0, "on"}},
 			}, {
 				input:    "ignoring",
-				expected: []item{{itemIgnoring, 0, "ignoring"}},
+				expected: []Item{{IGNORING, 0, "ignoring"}},
 			}, {
 				input:    "group_left",
-				expected: []item{{itemGroupLeft, 0, "group_left"}},
+				expected: []Item{{GROUP_LEFT, 0, "group_left"}},
 			}, {
 				input:    "group_right",
-				expected: []item{{itemGroupRight, 0, "group_right"}},
+				expected: []Item{{GROUP_RIGHT, 0, "group_right"}},
 			}, {
 				input:    "bool",
-				expected: []item{{itemBool, 0, "bool"}},
+				expected: []Item{{BOOL, 0, "bool"}},
 			},
 		},
 	},
@@ -328,57 +349,57 @@ var tests = []struct {
 				fail:  true,
 			}, {
 				input: `{foo='bar'}`,
-				expected: []item{
-					{itemLeftBrace, 0, `{`},
-					{itemIdentifier, 1, `foo`},
-					{itemEQL, 4, `=`},
-					{itemString, 5, `'bar'`},
-					{itemRightBrace, 10, `}`},
+				expected: []Item{
+					{LEFT_BRACE, 0, `{`},
+					{IDENTIFIER, 1, `foo`},
+					{EQL, 4, `=`},
+					{STRING, 5, `'bar'`},
+					{RIGHT_BRACE, 10, `}`},
 				},
 			}, {
 				input: `{foo="bar"}`,
-				expected: []item{
-					{itemLeftBrace, 0, `{`},
-					{itemIdentifier, 1, `foo`},
-					{itemEQL, 4, `=`},
-					{itemString, 5, `"bar"`},
-					{itemRightBrace, 10, `}`},
+				expected: []Item{
+					{LEFT_BRACE, 0, `{`},
+					{IDENTIFIER, 1, `foo`},
+					{EQL, 4, `=`},
+					{STRING, 5, `"bar"`},
+					{RIGHT_BRACE, 10, `}`},
 				},
 			}, {
 				input: `{foo="bar\"bar"}`,
-				expected: []item{
-					{itemLeftBrace, 0, `{`},
-					{itemIdentifier, 1, `foo`},
-					{itemEQL, 4, `=`},
-					{itemString, 5, `"bar\"bar"`},
-					{itemRightBrace, 15, `}`},
+				expected: []Item{
+					{LEFT_BRACE, 0, `{`},
+					{IDENTIFIER, 1, `foo`},
+					{EQL, 4, `=`},
+					{STRING, 5, `"bar\"bar"`},
+					{RIGHT_BRACE, 15, `}`},
 				},
 			}, {
 				input: `{NaN	!= "bar" }`,
-				expected: []item{
-					{itemLeftBrace, 0, `{`},
-					{itemIdentifier, 1, `NaN`},
-					{itemNEQ, 5, `!=`},
-					{itemString, 8, `"bar"`},
-					{itemRightBrace, 14, `}`},
+				expected: []Item{
+					{LEFT_BRACE, 0, `{`},
+					{IDENTIFIER, 1, `NaN`},
+					{NEQ, 5, `!=`},
+					{STRING, 8, `"bar"`},
+					{RIGHT_BRACE, 14, `}`},
 				},
 			}, {
 				input: `{alert=~"bar" }`,
-				expected: []item{
-					{itemLeftBrace, 0, `{`},
-					{itemIdentifier, 1, `alert`},
-					{itemEQLRegex, 6, `=~`},
-					{itemString, 8, `"bar"`},
-					{itemRightBrace, 14, `}`},
+				expected: []Item{
+					{LEFT_BRACE, 0, `{`},
+					{IDENTIFIER, 1, `alert`},
+					{EQL_REGEX, 6, `=~`},
+					{STRING, 8, `"bar"`},
+					{RIGHT_BRACE, 14, `}`},
 				},
 			}, {
 				input: `{on!~"bar"}`,
-				expected: []item{
-					{itemLeftBrace, 0, `{`},
-					{itemIdentifier, 1, `on`},
-					{itemNEQRegex, 3, `!~`},
-					{itemString, 5, `"bar"`},
-					{itemRightBrace, 10, `}`},
+				expected: []Item{
+					{LEFT_BRACE, 0, `{`},
+					{IDENTIFIER, 1, `on`},
+					{NEQ_REGEX, 3, `!~`},
+					{STRING, 5, `"bar"`},
+					{RIGHT_BRACE, 10, `}`},
 				},
 			}, {
 				input: `{alert!#"bar"}`, fail: true,
@@ -447,44 +468,44 @@ var tests = []struct {
 		tests: []testCase{
 			{
 				input: `{} _ 1 x .3`,
-				expected: []item{
-					{itemLeftBrace, 0, `{`},
-					{itemRightBrace, 1, `}`},
-					{itemSpace, 2, ` `},
-					{itemBlank, 3, `_`},
-					{itemSpace, 4, ` `},
-					{itemNumber, 5, `1`},
-					{itemSpace, 6, ` `},
-					{itemTimes, 7, `x`},
-					{itemSpace, 8, ` `},
-					{itemNumber, 9, `.3`},
+				expected: []Item{
+					{LEFT_BRACE, 0, `{`},
+					{RIGHT_BRACE, 1, `}`},
+					{SPACE, 2, ` `},
+					{BLANK, 3, `_`},
+					{SPACE, 4, ` `},
+					{NUMBER, 5, `1`},
+					{SPACE, 6, ` `},
+					{TIMES, 7, `x`},
+					{SPACE, 8, ` `},
+					{NUMBER, 9, `.3`},
 				},
 				seriesDesc: true,
 			},
 			{
 				input: `metric +Inf Inf NaN`,
-				expected: []item{
-					{itemIdentifier, 0, `metric`},
-					{itemSpace, 6, ` `},
-					{itemADD, 7, `+`},
-					{itemNumber, 8, `Inf`},
-					{itemSpace, 11, ` `},
-					{itemNumber, 12, `Inf`},
-					{itemSpace, 15, ` `},
-					{itemNumber, 16, `NaN`},
+				expected: []Item{
+					{IDENTIFIER, 0, `metric`},
+					{SPACE, 6, ` `},
+					{ADD, 7, `+`},
+					{NUMBER, 8, `Inf`},
+					{SPACE, 11, ` `},
+					{NUMBER, 12, `Inf`},
+					{SPACE, 15, ` `},
+					{NUMBER, 16, `NaN`},
 				},
 				seriesDesc: true,
 			},
 			{
 				input: `metric 1+1x4`,
-				expected: []item{
-					{itemIdentifier, 0, `metric`},
-					{itemSpace, 6, ` `},
-					{itemNumber, 7, `1`},
-					{itemADD, 8, `+`},
-					{itemNumber, 9, `1`},
-					{itemTimes, 10, `x`},
-					{itemNumber, 11, `4`},
+				expected: []Item{
+					{IDENTIFIER, 0, `metric`},
+					{SPACE, 6, ` `},
+					{NUMBER, 7, `1`},
+					{ADD, 8, `+`},
+					{NUMBER, 9, `1`},
+					{TIMES, 10, `x`},
+					{NUMBER, 11, `4`},
 				},
 				seriesDesc: true,
 			},
@@ -495,142 +516,151 @@ var tests = []struct {
 		tests: []testCase{
 			{
 				input: `test_name{on!~"bar"}[4m:4s]`,
-				expected: []item{
-					{itemIdentifier, 0, `test_name`},
-					{itemLeftBrace, 9, `{`},
-					{itemIdentifier, 10, `on`},
-					{itemNEQRegex, 12, `!~`},
-					{itemString, 14, `"bar"`},
-					{itemRightBrace, 19, `}`},
-					{itemLeftBracket, 20, `[`},
-					{itemDuration, 21, `4m`},
-					{itemColon, 23, `:`},
-					{itemDuration, 24, `4s`},
-					{itemRightBracket, 26, `]`},
+				expected: []Item{
+					{IDENTIFIER, 0, `test_name`},
+					{LEFT_BRACE, 9, `{`},
+					{IDENTIFIER, 10, `on`},
+					{NEQ_REGEX, 12, `!~`},
+					{STRING, 14, `"bar"`},
+					{RIGHT_BRACE, 19, `}`},
+					{LEFT_BRACKET, 20, `[`},
+					{DURATION, 21, `4m`},
+					{COLON, 23, `:`},
+					{DURATION, 24, `4s`},
+					{RIGHT_BRACKET, 26, `]`},
 				},
 			},
 			{
 				input: `test:name{on!~"bar"}[4m:4s]`,
-				expected: []item{
-					{itemMetricIdentifier, 0, `test:name`},
-					{itemLeftBrace, 9, `{`},
-					{itemIdentifier, 10, `on`},
-					{itemNEQRegex, 12, `!~`},
-					{itemString, 14, `"bar"`},
-					{itemRightBrace, 19, `}`},
-					{itemLeftBracket, 20, `[`},
-					{itemDuration, 21, `4m`},
-					{itemColon, 23, `:`},
-					{itemDuration, 24, `4s`},
-					{itemRightBracket, 26, `]`},
+				expected: []Item{
+					{METRIC_IDENTIFIER, 0, `test:name`},
+					{LEFT_BRACE, 9, `{`},
+					{IDENTIFIER, 10, `on`},
+					{NEQ_REGEX, 12, `!~`},
+					{STRING, 14, `"bar"`},
+					{RIGHT_BRACE, 19, `}`},
+					{LEFT_BRACKET, 20, `[`},
+					{DURATION, 21, `4m`},
+					{COLON, 23, `:`},
+					{DURATION, 24, `4s`},
+					{RIGHT_BRACKET, 26, `]`},
 				},
 			}, {
 				input: `test:name{on!~"b:ar"}[4m:4s]`,
-				expected: []item{
-					{itemMetricIdentifier, 0, `test:name`},
-					{itemLeftBrace, 9, `{`},
-					{itemIdentifier, 10, `on`},
-					{itemNEQRegex, 12, `!~`},
-					{itemString, 14, `"b:ar"`},
-					{itemRightBrace, 20, `}`},
-					{itemLeftBracket, 21, `[`},
-					{itemDuration, 22, `4m`},
-					{itemColon, 24, `:`},
-					{itemDuration, 25, `4s`},
-					{itemRightBracket, 27, `]`},
+				expected: []Item{
+					{METRIC_IDENTIFIER, 0, `test:name`},
+					{LEFT_BRACE, 9, `{`},
+					{IDENTIFIER, 10, `on`},
+					{NEQ_REGEX, 12, `!~`},
+					{STRING, 14, `"b:ar"`},
+					{RIGHT_BRACE, 20, `}`},
+					{LEFT_BRACKET, 21, `[`},
+					{DURATION, 22, `4m`},
+					{COLON, 24, `:`},
+					{DURATION, 25, `4s`},
+					{RIGHT_BRACKET, 27, `]`},
 				},
 			}, {
 				input: `test:name{on!~"b:ar"}[4m:]`,
-				expected: []item{
-					{itemMetricIdentifier, 0, `test:name`},
-					{itemLeftBrace, 9, `{`},
-					{itemIdentifier, 10, `on`},
-					{itemNEQRegex, 12, `!~`},
-					{itemString, 14, `"b:ar"`},
-					{itemRightBrace, 20, `}`},
-					{itemLeftBracket, 21, `[`},
-					{itemDuration, 22, `4m`},
-					{itemColon, 24, `:`},
-					{itemRightBracket, 25, `]`},
+				expected: []Item{
+					{METRIC_IDENTIFIER, 0, `test:name`},
+					{LEFT_BRACE, 9, `{`},
+					{IDENTIFIER, 10, `on`},
+					{NEQ_REGEX, 12, `!~`},
+					{STRING, 14, `"b:ar"`},
+					{RIGHT_BRACE, 20, `}`},
+					{LEFT_BRACKET, 21, `[`},
+					{DURATION, 22, `4m`},
+					{COLON, 24, `:`},
+					{RIGHT_BRACKET, 25, `]`},
 				},
 			}, { // Nested Subquery.
 				input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:])[4m:3s]`,
-				expected: []item{
+				expected: []Item{
 
-					{itemIdentifier, 0, `min_over_time`},
-					{itemLeftParen, 13, `(`},
-					{itemIdentifier, 14, `rate`},
-					{itemLeftParen, 18, `(`},
-					{itemIdentifier, 19, `foo`},
-					{itemLeftBrace, 22, `{`},
-					{itemIdentifier, 23, `bar`},
-					{itemEQL, 26, `=`},
-					{itemString, 27, `"baz"`},
-					{itemRightBrace, 32, `}`},
-					{itemLeftBracket, 33, `[`},
-					{itemDuration, 34, `2s`},
-					{itemRightBracket, 36, `]`},
-					{itemRightParen, 37, `)`},
-					{itemLeftBracket, 38, `[`},
-					{itemDuration, 39, `5m`},
-					{itemColon, 41, `:`},
-					{itemRightBracket, 42, `]`},
-					{itemRightParen, 43, `)`},
-					{itemLeftBracket, 44, `[`},
-					{itemDuration, 45, `4m`},
-					{itemColon, 47, `:`},
-					{itemDuration, 48, `3s`},
-					{itemRightBracket, 50, `]`},
+					{IDENTIFIER, 0, `min_over_time`},
+					{LEFT_PAREN, 13, `(`},
+					{IDENTIFIER, 14, `rate`},
+					{LEFT_PAREN, 18, `(`},
+					{IDENTIFIER, 19, `foo`},
+					{LEFT_BRACE, 22, `{`},
+					{IDENTIFIER, 23, `bar`},
+					{EQL, 26, `=`},
+					{STRING, 27, `"baz"`},
+					{RIGHT_BRACE, 32, `}`},
+					{LEFT_BRACKET, 33, `[`},
+					{DURATION, 34, `2s`},
+					{RIGHT_BRACKET, 36, `]`},
+					{RIGHT_PAREN, 37, `)`},
+					{LEFT_BRACKET, 38, `[`},
+					{DURATION, 39, `5m`},
+					{COLON, 41, `:`},
+					{RIGHT_BRACKET, 42, `]`},
+					{RIGHT_PAREN, 43, `)`},
+					{LEFT_BRACKET, 44, `[`},
+					{DURATION, 45, `4m`},
+					{COLON, 47, `:`},
+					{DURATION, 48, `3s`},
+					{RIGHT_BRACKET, 50, `]`},
 				},
 			},
 			// Subquery with offset.
 			{
 				input: `test:name{on!~"b:ar"}[4m:4s] offset 10m`,
-				expected: []item{
-					{itemMetricIdentifier, 0, `test:name`},
-					{itemLeftBrace, 9, `{`},
-					{itemIdentifier, 10, `on`},
-					{itemNEQRegex, 12, `!~`},
-					{itemString, 14, `"b:ar"`},
-					{itemRightBrace, 20, `}`},
-					{itemLeftBracket, 21, `[`},
-					{itemDuration, 22, `4m`},
-					{itemColon, 24, `:`},
-					{itemDuration, 25, `4s`},
-					{itemRightBracket, 27, `]`},
-					{itemOffset, 29, "offset"},
-					{itemDuration, 36, "10m"},
+				expected: []Item{
+					{METRIC_IDENTIFIER, 0, `test:name`},
+					{LEFT_BRACE, 9, `{`},
+					{IDENTIFIER, 10, `on`},
+					{NEQ_REGEX, 12, `!~`},
+					{STRING, 14, `"b:ar"`},
+					{RIGHT_BRACE, 20, `}`},
+					{LEFT_BRACKET, 21, `[`},
+					{DURATION, 22, `4m`},
+					{COLON, 24, `:`},
+					{DURATION, 25, `4s`},
+					{RIGHT_BRACKET, 27, `]`},
+					{OFFSET, 29, "offset"},
+					{DURATION, 36, "10m"},
 				},
 			}, {
 				input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:] offset 6m)[4m:3s]`,
-				expected: []item{
+				expected: []Item{
 
-					{itemIdentifier, 0, `min_over_time`},
-					{itemLeftParen, 13, `(`},
-					{itemIdentifier, 14, `rate`},
-					{itemLeftParen, 18, `(`},
-					{itemIdentifier, 19, `foo`},
-					{itemLeftBrace, 22, `{`},
-					{itemIdentifier, 23, `bar`},
-					{itemEQL, 26, `=`},
-					{itemString, 27, `"baz"`},
-					{itemRightBrace, 32, `}`},
-					{itemLeftBracket, 33, `[`},
-					{itemDuration, 34, `2s`},
-					{itemRightBracket, 36, `]`},
-					{itemRightParen, 37, `)`},
-					{itemLeftBracket, 38, `[`},
-					{itemDuration, 39, `5m`},
-					{itemColon, 41, `:`},
-					{itemRightBracket, 42, `]`},
-					{itemOffset, 44, `offset`},
-					{itemDuration, 51, `6m`},
-					{itemRightParen, 53, `)`},
-					{itemLeftBracket, 54, `[`},
-					{itemDuration, 55, `4m`},
-					{itemColon, 57, `:`},
-					{itemDuration, 58, `3s`},
-					{itemRightBracket, 60, `]`},
+					{IDENTIFIER, 0, `min_over_time`},
+					{LEFT_PAREN, 13, `(`},
+					{IDENTIFIER, 14, `rate`},
+					{LEFT_PAREN, 18, `(`},
+					{IDENTIFIER, 19, `foo`},
+					{LEFT_BRACE, 22, `{`},
+					{IDENTIFIER, 23, `bar`},
+					{EQL, 26, `=`},
+					{STRING, 27, `"baz"`},
+					{RIGHT_BRACE, 32, `}`},
+					{LEFT_BRACKET, 33, `[`},
+					{DURATION, 34, `2s`},
+					{RIGHT_BRACKET, 36, `]`},
+					{RIGHT_PAREN, 37, `)`},
+					{LEFT_BRACKET, 38, `[`},
+					{DURATION, 39, `5m`},
+					{COLON, 41, `:`},
+					{RIGHT_BRACKET, 42, `]`},
+					{OFFSET, 44, `offset`},
+					{DURATION, 51, `6m`},
+					{RIGHT_PAREN, 53, `)`},
+					{LEFT_BRACKET, 54, `[`},
+					{DURATION, 55, `4m`},
+					{COLON, 57, `:`},
+					{DURATION, 58, `3s`},
+					{RIGHT_BRACKET, 60, `]`},
+				},
+			},
+			{
+				input: `test:name[ 5m]`,
+				expected: []Item{
+					{METRIC_IDENTIFIER, 0, `test:name`},
+					{LEFT_BRACKET, 9, `[`},
+					{DURATION, 11, `5m`},
+					{RIGHT_BRACKET, 13, `]`},
 				},
 			},
 			{
@@ -663,49 +693,33 @@ func TestLexer(t *testing.T) {
 	for _, typ := range tests {
 		t.Run(typ.name, func(t *testing.T) {
 			for i, test := range typ.tests {
-				l := &lexer{
+				l := &Lexer{
 					input:      test.input,
-					items:      make(chan item),
 					seriesDesc: test.seriesDesc,
 				}
-				go l.run()
+				l.run()
 
-				out := []item{}
-				for it := range l.items {
-					out = append(out, it)
-				}
+				out := l.Items
 
 				lastItem := out[len(out)-1]
 				if test.fail {
-					if lastItem.typ != itemError {
+					if lastItem.Typ != ERROR {
 						t.Logf("%d: input %q", i, test.input)
 						t.Fatalf("expected lexing error but did not fail")
 					}
 					continue
 				}
-				if lastItem.typ == itemError {
+				if lastItem.Typ == ERROR {
 					t.Logf("%d: input %q", i, test.input)
-					t.Fatalf("unexpected lexing error at position %d: %s", lastItem.pos, lastItem)
+					t.Fatalf("unexpected lexing error at position %d: %s", lastItem.Pos, lastItem)
 				}
 
-				if !reflect.DeepEqual(lastItem, item{itemEOF, Pos(len(test.input)), ""}) {
-					t.Logf("%d: input %q", i, test.input)
-					t.Fatalf("lexing error: expected output to end with EOF item.\ngot:\n%s", expectedList(out))
-				}
+				eofItem := Item{EOF, Pos(len(test.input)), ""}
+				testutil.Equals(t, lastItem, eofItem, "%d: input %q", i, test.input)
+
 				out = out[:len(out)-1]
-				if !reflect.DeepEqual(out, test.expected) {
-					t.Logf("%d: input %q", i, test.input)
-					t.Fatalf("lexing mismatch:\nexpected:\n%s\ngot:\n%s", expectedList(test.expected), expectedList(out))
-				}
+				testutil.Equals(t, out, test.expected, "%d: input %q", i, test.input)
 			}
 		})
 	}
-}
-
-func expectedList(exp []item) string {
-	s := ""
-	for _, it := range exp {
-		s += fmt.Sprintf("\t%#v\n", it)
-	}
-	return s
 }

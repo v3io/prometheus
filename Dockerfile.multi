@@ -1,7 +1,11 @@
-FROM golang:1.12 as builder
+FROM golang:1.13 as builder
 ADD ./ /go/src/github.com/prometheus/prometheus
 WORKDIR /go/src/github.com/prometheus/prometheus
 RUN git clone https://github.com/prometheus/promu /go/src/github.com/prometheus/promu
+RUN curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | apt-key add - \
+        && echo "deb https://dl.yarnpkg.com/debian/ stable main" > /etc/apt/sources.list.d/yarn.list \
+        && apt-get update \
+        && apt-get install -y --no-install-recommends nodejs yarn
 RUN make build
 
 FROM        quay.io/prometheus/busybox:latest

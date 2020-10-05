@@ -46,8 +46,8 @@ func TestConfiguredService(t *testing.T) {
 
 func TestConfiguredServiceWithTag(t *testing.T) {
 	conf := &SDConfig{
-		Services:   []string{"configuredServiceName"},
-		ServiceTag: "http",
+		Services:    []string{"configuredServiceName"},
+		ServiceTags: []string{"http"},
 	}
 	consulDiscovery, err := NewDiscovery(conf, nil)
 
@@ -65,6 +65,96 @@ func TestConfiguredServiceWithTag(t *testing.T) {
 	}
 	if consulDiscovery.shouldWatch("nonConfiguredServiceName", []string{"http"}) {
 		t.Errorf("Expected service %s to not be watched with tag %s", "nonConfiguredServiceName", "http")
+	}
+}
+
+func TestConfiguredServiceWithTags(t *testing.T) {
+	type testcase struct {
+		// What we've configured to watch.
+		conf *SDConfig
+		// The service we're checking if we should watch or not.
+		serviceName string
+		serviceTags []string
+		shouldWatch bool
+	}
+
+	cases := []testcase{
+		{
+			conf: &SDConfig{
+				Services:    []string{"configuredServiceName"},
+				ServiceTags: []string{"http", "v1"},
+			},
+			serviceName: "configuredServiceName",
+			serviceTags: []string{""},
+			shouldWatch: false,
+		},
+		{
+			conf: &SDConfig{
+				Services:    []string{"configuredServiceName"},
+				ServiceTags: []string{"http", "v1"},
+			},
+			serviceName: "configuredServiceName",
+			serviceTags: []string{"http", "v1"},
+			shouldWatch: true,
+		},
+		{
+			conf: &SDConfig{
+				Services:    []string{"configuredServiceName"},
+				ServiceTags: []string{"http", "v1"},
+			},
+			serviceName: "nonConfiguredServiceName",
+			serviceTags: []string{""},
+			shouldWatch: false,
+		},
+		{
+			conf: &SDConfig{
+				Services:    []string{"configuredServiceName"},
+				ServiceTags: []string{"http", "v1"},
+			},
+			serviceName: "nonConfiguredServiceName",
+			serviceTags: []string{"http, v1"},
+			shouldWatch: false,
+		},
+		{
+			conf: &SDConfig{
+				Services:    []string{"configuredServiceName"},
+				ServiceTags: []string{"http", "v1"},
+			},
+			serviceName: "configuredServiceName",
+			serviceTags: []string{"http", "v1", "foo"},
+			shouldWatch: true,
+		},
+		{
+			conf: &SDConfig{
+				Services:    []string{"configuredServiceName"},
+				ServiceTags: []string{"http", "v1", "foo"},
+			},
+			serviceName: "configuredServiceName",
+			serviceTags: []string{"http", "v1", "foo"},
+			shouldWatch: true,
+		},
+		{
+			conf: &SDConfig{
+				Services:    []string{"configuredServiceName"},
+				ServiceTags: []string{"http", "v1"},
+			},
+			serviceName: "configuredServiceName",
+			serviceTags: []string{"http", "v1", "v1"},
+			shouldWatch: true,
+		},
+	}
+
+	for _, tc := range cases {
+		consulDiscovery, err := NewDiscovery(tc.conf, nil)
+
+		if err != nil {
+			t.Errorf("Unexpected error when initializing discovery %v", err)
+		}
+		ret := consulDiscovery.shouldWatch(tc.serviceName, tc.serviceTags)
+		if ret != tc.shouldWatch {
+			t.Errorf("Expected should watch? %t, got %t. Watched service and tags: %s %+v, input was %s %+v", tc.shouldWatch, ret, tc.conf.Services, tc.conf.ServiceTags, tc.serviceName, tc.serviceTags)
+		}
+
 	}
 }
 
@@ -124,7 +214,7 @@ func newServer(t *testing.T) (*httptest.Server, *SDConfig) {
 			time.Sleep(5 * time.Second)
 			response = ServicesTestAnswer
 		default:
-			t.Errorf("Unhandeld consul call: %s", r.URL)
+			t.Errorf("Unhandled consul call: %s", r.URL)
 		}
 		w.Header().Add("X-Consul-Index", "1")
 		w.Write([]byte(response))
@@ -195,7 +285,7 @@ func TestAllOptions(t *testing.T) {
 
 	config.Services = []string{"test"}
 	config.NodeMeta = map[string]string{"rack_name": "2304"}
-	config.ServiceTag = "tag1"
+	config.ServiceTags = []string{"tag1"}
 	config.AllowStale = true
 	config.Token = "fake-token"
 
@@ -206,4 +296,48 @@ func TestAllOptions(t *testing.T) {
 	go d.Run(ctx, ch)
 	checkOneTarget(t, <-ch)
 	cancel()
+}
+
+func TestGetDatacenterShouldReturnError(t *testing.T) {
+	for _, tc := range []struct {
+		handler    func(http.ResponseWriter, *http.Request)
+		errMessage string
+	}{
+		{
+			// Define a handler that will return status 500.
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(500)
+			},
+			errMessage: "Unexpected response code: 500 ()",
+		},
+		{
+			// Define a handler that will return incorrect response.
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Write([]byte(`{"Config": {"Not-Datacenter": "test-dc"}}`))
+			},
+			errMessage: "invalid value '<nil>' for Config.Datacenter",
+		},
+	} {
+		stub := httptest.NewServer(http.HandlerFunc(tc.handler))
+		stuburl, err := url.Parse(stub.URL)
+		testutil.Ok(t, err)
+
+		config := &SDConfig{
+			Server:          stuburl.Host,
+			Token:           "fake-token",
+			RefreshInterval: model.Duration(1 * time.Second),
+		}
+		defer stub.Close()
+		d := newDiscovery(t, config)
+
+		// Should be empty if not initialized.
+		testutil.Equals(t, "", d.clientDatacenter)
+
+		err = d.getDatacenter()
+
+		// An error should be returned.
+		testutil.Equals(t, tc.errMessage, err.Error())
+		// Should still be empty.
+		testutil.Equals(t, "", d.clientDatacenter)
+	}
 }

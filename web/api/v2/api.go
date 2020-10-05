@@ -24,20 +24,17 @@ import (
 	"path/filepath"
 	"time"
 
-	old_ctx "golang.org/x/net/context"
+	"github.com/grpc-ecosystem/grpc-gateway/runtime"
+	"github.com/pkg/errors"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/cockroachdb/cockroach/pkg/util/protoutil"
-	"github.com/grpc-ecosystem/grpc-gateway/runtime"
-	"github.com/pkg/errors"
-	"github.com/prometheus/tsdb"
-	tsdbLabels "github.com/prometheus/tsdb/labels"
-
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	pb "github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/tsdb"
 )
 
 // API encapsulates all API services.
@@ -68,13 +65,13 @@ func (api *API) RegisterGRPC(srv *grpc.Server) {
 
 // HTTPHandler returns an HTTP handler for a REST API gateway to the given grpc address.
 func (api *API) HTTPHandler(ctx context.Context, grpcAddr string) (http.Handler, error) {
-	enc := new(protoutil.JSONPb)
+	enc := new(runtime.JSONPb)
 	mux := runtime.NewServeMux(runtime.WithMarshalerOption(enc.ContentType(), enc))
 
 	opts := []grpc.DialOption{
 		grpc.WithInsecure(),
 		// Replace the default dialer that connects through proxy when HTTP_PROXY is set.
-		grpc.WithDialer(func(addr string, _ time.Duration) (net.Conn, error) {
+		grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "tcp", addr)
 		}),
 	}
@@ -122,17 +119,17 @@ type AdminDisabled struct {
 }
 
 // TSDBSnapshot implements pb.AdminServer.
-func (s *AdminDisabled) TSDBSnapshot(_ old_ctx.Context, _ *pb.TSDBSnapshotRequest) (*pb.TSDBSnapshotResponse, error) {
+func (s *AdminDisabled) TSDBSnapshot(_ context.Context, _ *pb.TSDBSnapshotRequest) (*pb.TSDBSnapshotResponse, error) {
 	return nil, errAdminDisabled
 }
 
 // TSDBCleanTombstones implements pb.AdminServer.
-func (s *AdminDisabled) TSDBCleanTombstones(_ old_ctx.Context, _ *pb.TSDBCleanTombstonesRequest) (*pb.TSDBCleanTombstonesResponse, error) {
+func (s *AdminDisabled) TSDBCleanTombstones(_ context.Context, _ *pb.TSDBCleanTombstonesRequest) (*pb.TSDBCleanTombstonesResponse, error) {
 	return nil, errAdminDisabled
 }
 
 // DeleteSeries implements pb.AdminServer.
-func (s *AdminDisabled) DeleteSeries(_ old_ctx.Context, r *pb.SeriesDeleteRequest) (*pb.SeriesDeleteResponse, error) {
+func (s *AdminDisabled) DeleteSeries(_ context.Context, r *pb.SeriesDeleteRequest) (*pb.SeriesDeleteResponse, error) {
 	return nil, errAdminDisabled
 }
 
@@ -149,7 +146,7 @@ func NewAdmin(db func() *tsdb.DB) *Admin {
 }
 
 // TSDBSnapshot implements pb.AdminServer.
-func (s *Admin) TSDBSnapshot(_ old_ctx.Context, req *pb.TSDBSnapshotRequest) (*pb.TSDBSnapshotResponse, error) {
+func (s *Admin) TSDBSnapshot(_ context.Context, req *pb.TSDBSnapshotRequest) (*pb.TSDBSnapshotResponse, error) {
 	db := s.db()
 	if db == nil {
 		return nil, errTSDBNotReady
@@ -171,7 +168,7 @@ func (s *Admin) TSDBSnapshot(_ old_ctx.Context, req *pb.TSDBSnapshotRequest) (*p
 }
 
 // TSDBCleanTombstones implements pb.AdminServer.
-func (s *Admin) TSDBCleanTombstones(_ old_ctx.Context, _ *pb.TSDBCleanTombstonesRequest) (*pb.TSDBCleanTombstonesResponse, error) {
+func (s *Admin) TSDBCleanTombstones(_ context.Context, _ *pb.TSDBCleanTombstonesRequest) (*pb.TSDBCleanTombstonesResponse, error) {
 	db := s.db()
 	if db == nil {
 		return nil, errTSDBNotReady
@@ -185,35 +182,32 @@ func (s *Admin) TSDBCleanTombstones(_ old_ctx.Context, _ *pb.TSDBCleanTombstones
 }
 
 // DeleteSeries implements pb.AdminServer.
-func (s *Admin) DeleteSeries(_ old_ctx.Context, r *pb.SeriesDeleteRequest) (*pb.SeriesDeleteResponse, error) {
+func (s *Admin) DeleteSeries(_ context.Context, r *pb.SeriesDeleteRequest) (*pb.SeriesDeleteResponse, error) {
 	mint, maxt, err := extractTimeRange(r.MinTime, r.MaxTime)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	var matchers tsdbLabels.Selector
+	var matchers []*labels.Matcher
 
 	for _, m := range r.Matchers {
-		var lm tsdbLabels.Matcher
+		var lm *labels.Matcher
 		var err error
 
 		switch m.Type {
 		case pb.LabelMatcher_EQ:
-			lm = tsdbLabels.NewEqualMatcher(m.Name, m.Value)
+			lm, err = labels.NewMatcher(labels.MatchEqual, m.Name, m.Value)
 		case pb.LabelMatcher_NEQ:
-			lm = tsdbLabels.Not(tsdbLabels.NewEqualMatcher(m.Name, m.Value))
+			lm, err = labels.NewMatcher(labels.MatchNotEqual, m.Name, m.Value)
 		case pb.LabelMatcher_RE:
-			lm, err = tsdbLabels.NewRegexpMatcher(m.Name, m.Value)
-			if err != nil {
-				return nil, status.Errorf(codes.InvalidArgument, "bad regexp matcher: %s", err)
-			}
+			lm, err = labels.NewMatcher(labels.MatchRegexp, m.Name, m.Value)
 		case pb.LabelMatcher_NRE:
-			lm, err = tsdbLabels.NewRegexpMatcher(m.Name, m.Value)
-			if err != nil {
-				return nil, status.Errorf(codes.InvalidArgument, "bad regexp matcher: %s", err)
-			}
-			lm = tsdbLabels.Not(lm)
+			lm, err = labels.NewMatcher(labels.MatchNotRegexp, m.Name, m.Value)
 		default:
 			return nil, status.Error(codes.InvalidArgument, "unknown matcher type")
+		}
+
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "bad matcher: %s", err)
 		}
 
 		matchers = append(matchers, lm)

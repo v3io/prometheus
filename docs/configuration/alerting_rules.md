@@ -22,7 +22,7 @@ An example rules file with an alert would be:
 groups:
 - name: example
   rules:
-  - alert: HighErrorRate
+  - alert: HighRequestLatency
     expr: job:request_latency_seconds:mean5m{job="myjob"} > 0.5
     for: 10m
     labels:
@@ -42,9 +42,11 @@ The `annotations` clause specifies a set of informational labels that can be use
 
 #### Templating
 
-Label and annotation values can be templated using [console templates](https://prometheus.io/docs/visualization/consoles).
-The `$labels` variable holds the label key/value pairs of an alert instance
-and `$value` holds the evaluated value of an alert instance.
+Label and annotation values can be templated using [console
+templates](https://prometheus.io/docs/visualization/consoles).  The `$labels`
+variable holds the label key/value pairs of an alert instance. The configured
+external labels can be accessed via the `$externalLabels` variable. The
+`$value` variable holds the evaluated value of an alert instance.
 
     # To insert a firing element's label values:
     {{ $labels.<labelname> }}
@@ -99,5 +101,5 @@ on top of the simple alert definitions. In Prometheus's ecosystem, the
 role. Thus, Prometheus may be configured to periodically send information about
 alert states to an Alertmanager instance, which then takes care of dispatching
 the right notifications.  
-Prometheus can be [configured](configuration.md) to automatically discovered available
+Prometheus can be [configured](configuration.md) to automatically discover available
 Alertmanager instances through its service discovery integrations.
