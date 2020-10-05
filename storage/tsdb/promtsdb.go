@@ -133,12 +133,14 @@ func (promQuery *V3ioPromQuerier) Select(params *storage.SelectParams, oms ...*l
 }
 
 // LabelValues returns all potential values for a label name.
-func (promQuery *V3ioPromQuerier) LabelValues(name string) ([]string, error) {
-	return promQuery.v3ioQuerier.LabelValues(name)
+func (promQuery *V3ioPromQuerier) LabelValues(name string) ([]string, storage.Warnings, error) {
+	values, err := promQuery.v3ioQuerier.LabelValues(name)
+	return values, nil, err
 }
 
-func (promQuery *V3ioPromQuerier) LabelNames() ([]string, error) {
-	return promQuery.v3ioQuerier.LabelNames()
+func (promQuery *V3ioPromQuerier) LabelNames() ([]string, storage.Warnings, error) {
+	values, err := promQuery.v3ioQuerier.LabelNames()
+	return values, nil, err
 }
 
 // Close releases the resources of the Querier.

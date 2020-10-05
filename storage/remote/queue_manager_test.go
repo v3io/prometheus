@@ -30,14 +30,15 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
-	"github.com/stretchr/testify/require"
 
+	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/util/testutil"
-	"github.com/prometheus/tsdb"
-	"github.com/prometheus/tsdb/labels"
 )
 
 const defaultFlushDeadline = 1 * time.Minute
@@ -45,7 +46,7 @@ const defaultFlushDeadline = 1 * time.Minute
 func TestSampleDelivery(t *testing.T) {
 	// Let's create an even number of send batches so we don't run into the
 	// batch timeout case.
-	n := config.DefaultQueueConfig.Capacity * 2
+	n := config.DefaultQueueConfig.MaxSamplesPerSend * 2
 	samples, series := createTimeseries(n)
 
 	c := NewTestStorageClient()
@@ -59,8 +60,8 @@ func TestSampleDelivery(t *testing.T) {
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
-	m := NewQueueManager(nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, nil, nil, c, defaultFlushDeadline)
-	m.seriesLabels = refSeriesToLabelsProto(series)
+	m := NewQueueManager(nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, nil, nil, c, defaultFlushDeadline)
+	m.StoreSeries(series, 0)
 
 	// These should be received by the client.
 	m.Start()
@@ -87,8 +88,8 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
-	m := NewQueueManager(nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, nil, nil, c, defaultFlushDeadline)
-	m.seriesLabels = refSeriesToLabelsProto(series)
+	m := NewQueueManager(nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, nil, nil, c, defaultFlushDeadline)
+	m.StoreSeries(series, 0)
 	m.Start()
 	defer m.Stop()
 
@@ -105,16 +106,16 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 func TestSampleDeliveryOrder(t *testing.T) {
 	ts := 10
 	n := config.DefaultQueueConfig.MaxSamplesPerSend * ts
-	samples := make([]tsdb.RefSample, 0, n)
-	series := make([]tsdb.RefSeries, 0, n)
+	samples := make([]record.RefSample, 0, n)
+	series := make([]record.RefSeries, 0, n)
 	for i := 0; i < n; i++ {
 		name := fmt.Sprintf("test_metric_%d", i%ts)
-		samples = append(samples, tsdb.RefSample{
+		samples = append(samples, record.RefSample{
 			Ref: uint64(i),
 			T:   int64(i),
 			V:   float64(i),
 		})
-		series = append(series, tsdb.RefSeries{
+		series = append(series, record.RefSeries{
 			Ref:    uint64(i),
 			Labels: labels.Labels{labels.Label{Name: "__name__", Value: name}},
 		})
@@ -127,8 +128,8 @@ func TestSampleDeliveryOrder(t *testing.T) {
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
-	m := NewQueueManager(nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), config.DefaultQueueConfig, nil, nil, c, defaultFlushDeadline)
-	m.seriesLabels = refSeriesToLabelsProto(series)
+	m := NewQueueManager(nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), config.DefaultQueueConfig, nil, nil, c, defaultFlushDeadline)
+	m.StoreSeries(series, 0)
 
 	m.Start()
 	defer m.Stop()
@@ -145,9 +146,9 @@ func TestShutdown(t *testing.T) {
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
-	m := NewQueueManager(nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), config.DefaultQueueConfig, nil, nil, c, deadline)
+	m := NewQueueManager(nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), config.DefaultQueueConfig, nil, nil, c, deadline)
 	samples, series := createTimeseries(2 * config.DefaultQueueConfig.MaxSamplesPerSend)
-	m.seriesLabels = refSeriesToLabelsProto(series)
+	m.StoreSeries(series, 0)
 	m.Start()
 
 	// Append blocks to guarantee delivery, so we do it in the background.
@@ -181,11 +182,11 @@ func TestSeriesReset(t *testing.T) {
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
-	m := NewQueueManager(nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), config.DefaultQueueConfig, nil, nil, c, deadline)
+	m := NewQueueManager(nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), config.DefaultQueueConfig, nil, nil, c, deadline)
 	for i := 0; i < numSegments; i++ {
-		series := []tsdb.RefSeries{}
+		series := []record.RefSeries{}
 		for j := 0; j < numSeries; j++ {
-			series = append(series, tsdb.RefSeries{Ref: uint64((i * 100) + j), Labels: labels.Labels{labels.Label{Name: "a", Value: "a"}}})
+			series = append(series, record.RefSeries{Ref: uint64((i * 100) + j), Labels: labels.Labels{{Name: "a", Value: "a"}}})
 		}
 		m.StoreSeries(series, i)
 	}
@@ -209,8 +210,8 @@ func TestReshard(t *testing.T) {
 	testutil.Ok(t, err)
 	defer os.RemoveAll(dir)
 
-	m := NewQueueManager(nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, nil, nil, c, defaultFlushDeadline)
-	m.seriesLabels = refSeriesToLabelsProto(series)
+	m := NewQueueManager(nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, nil, nil, c, defaultFlushDeadline)
+	m.StoreSeries(series, 0)
 
 	m.Start()
 	defer m.Stop()
@@ -218,7 +219,7 @@ func TestReshard(t *testing.T) {
 	go func() {
 		for i := 0; i < len(samples); i += config.DefaultQueueConfig.Capacity {
 			sent := m.Append(samples[i : i+config.DefaultQueueConfig.Capacity])
-			require.True(t, sent)
+			testutil.Assert(t, sent, "samples not sent")
 			time.Sleep(100 * time.Millisecond)
 		}
 	}()
@@ -232,25 +233,118 @@ func TestReshard(t *testing.T) {
 	c.waitForExpectedSamples(t)
 }
 
-func createTimeseries(n int) ([]tsdb.RefSample, []tsdb.RefSeries) {
-	samples := make([]tsdb.RefSample, 0, n)
-	series := make([]tsdb.RefSeries, 0, n)
+func TestReshardRaceWithStop(t *testing.T) {
+	c := NewTestStorageClient()
+	var m *QueueManager
+	h := sync.Mutex{}
+
+	h.Lock()
+
+	go func() {
+		for {
+			m = NewQueueManager(nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), config.DefaultQueueConfig, nil, nil, c, defaultFlushDeadline)
+			m.Start()
+			h.Unlock()
+			h.Lock()
+			m.Stop()
+		}
+	}()
+
+	for i := 1; i < 100; i++ {
+		h.Lock()
+		m.reshardChan <- i
+		h.Unlock()
+	}
+}
+
+func TestReleaseNoninternedString(t *testing.T) {
+	c := NewTestStorageClient()
+	m := NewQueueManager(nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), config.DefaultQueueConfig, nil, nil, c, defaultFlushDeadline)
+	m.Start()
+
+	for i := 1; i < 1000; i++ {
+		m.StoreSeries([]record.RefSeries{
+			{
+				Ref: uint64(i),
+				Labels: labels.Labels{
+					labels.Label{
+						Name:  "asdf",
+						Value: fmt.Sprintf("%d", i),
+					},
+				},
+			},
+		}, 0)
+		m.SeriesReset(1)
+	}
+
+	metric := client_testutil.ToFloat64(noReferenceReleases)
+	testutil.Assert(t, metric == 0, "expected there to be no calls to release for strings that were not already interned: %d", int(metric))
+}
+
+func TestCalculateDesiredsShards(t *testing.T) {
+	type testcase struct {
+		startingShards        int
+		samplesIn, samplesOut int64
+		reshard               bool
+	}
+	cases := []testcase{
+		{
+			// Test that ensures that if we haven't successfully sent a
+			// sample recently the queue will not reshard.
+			startingShards: 10,
+			reshard:        false,
+			samplesIn:      1000,
+			samplesOut:     10,
+		},
+		{
+			startingShards: 5,
+			reshard:        true,
+			samplesIn:      1000,
+			samplesOut:     10,
+		},
+	}
+	for _, c := range cases {
+		client := NewTestStorageClient()
+		m := NewQueueManager(nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), config.DefaultQueueConfig, nil, nil, client, defaultFlushDeadline)
+		m.numShards = c.startingShards
+		m.samplesIn.incr(c.samplesIn)
+		m.samplesOut.incr(c.samplesOut)
+		m.lastSendTimestamp = time.Now().Unix()
+
+		// Resharding shouldn't take place if the last successful send was > batch send deadline*2 seconds ago.
+		if !c.reshard {
+			m.lastSendTimestamp = m.lastSendTimestamp - int64(3*time.Duration(config.DefaultQueueConfig.BatchSendDeadline)/time.Second)
+		}
+		m.Start()
+		desiredShards := m.calculateDesiredShards()
+		m.Stop()
+		if !c.reshard {
+			testutil.Assert(t, desiredShards == m.numShards, "expected calculateDesiredShards to not want to reshard, wants to change from %d to %d shards", m.numShards, desiredShards)
+		} else {
+			testutil.Assert(t, desiredShards != m.numShards, "expected calculateDesiredShards to want to reshard, wants to change from %d to %d shards", m.numShards, desiredShards)
+		}
+	}
+}
+
+func createTimeseries(n int) ([]record.RefSample, []record.RefSeries) {
+	samples := make([]record.RefSample, 0, n)
+	series := make([]record.RefSeries, 0, n)
 	for i := 0; i < n; i++ {
 		name := fmt.Sprintf("test_metric_%d", i)
-		samples = append(samples, tsdb.RefSample{
+		samples = append(samples, record.RefSample{
 			Ref: uint64(i),
 			T:   int64(i),
 			V:   float64(i),
 		})
-		series = append(series, tsdb.RefSeries{
+		series = append(series, record.RefSeries{
 			Ref:    uint64(i),
-			Labels: labels.Labels{labels.Label{Name: "__name__", Value: name}},
+			Labels: labels.Labels{{Name: "__name__", Value: name}},
 		})
 	}
 	return samples, series
 }
 
-func getSeriesNameFromRef(r tsdb.RefSeries) string {
+func getSeriesNameFromRef(r record.RefSeries) string {
 	for _, l := range r.Labels {
 		if l.Name == "__name__" {
 			return l.Value
@@ -259,24 +353,12 @@ func getSeriesNameFromRef(r tsdb.RefSeries) string {
 	return ""
 }
 
-func refSeriesToLabelsProto(series []tsdb.RefSeries) map[uint64][]prompb.Label {
-	result := make(map[uint64][]prompb.Label)
-	for _, s := range series {
-		for _, l := range s.Labels {
-			result[s.Ref] = append(result[s.Ref], prompb.Label{
-				Name:  l.Name,
-				Value: l.Value,
-			})
-		}
-	}
-	return result
-}
-
 type TestStorageClient struct {
 	receivedSamples map[string][]prompb.Sample
 	expectedSamples map[string][]prompb.Sample
 	wg              sync.WaitGroup
 	mtx             sync.Mutex
+	buf             []byte
 }
 
 func NewTestStorageClient() *TestStorageClient {
@@ -286,7 +368,7 @@ func NewTestStorageClient() *TestStorageClient {
 	}
 }
 
-func (c *TestStorageClient) expectSamples(ss []tsdb.RefSample, series []tsdb.RefSeries) {
+func (c *TestStorageClient) expectSamples(ss []record.RefSample, series []record.RefSeries) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
@@ -303,21 +385,36 @@ func (c *TestStorageClient) expectSamples(ss []tsdb.RefSample, series []tsdb.Ref
 	c.wg.Add(len(ss))
 }
 
-func (c *TestStorageClient) waitForExpectedSamples(t *testing.T) {
+func (c *TestStorageClient) waitForExpectedSamples(tb testing.TB) {
 	c.wg.Wait()
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 	for ts, expectedSamples := range c.expectedSamples {
 		if !reflect.DeepEqual(expectedSamples, c.receivedSamples[ts]) {
-			t.Fatalf("%s: Expected %v, got %v", ts, expectedSamples, c.receivedSamples[ts])
+			tb.Fatalf("%s: Expected %v, got %v", ts, expectedSamples, c.receivedSamples[ts])
 		}
 	}
+}
+
+func (c *TestStorageClient) expectSampleCount(ss []record.RefSample) {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+	c.wg.Add(len(ss))
+}
+
+func (c *TestStorageClient) waitForExpectedSampleCount() {
+	c.wg.Wait()
 }
 
 func (c *TestStorageClient) Store(_ context.Context, req []byte) error {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
-	reqBuf, err := snappy.Decode(nil, req)
+	// nil buffers are ok for snappy, ignore cast error.
+	if c.buf != nil {
+		c.buf = c.buf[:cap(c.buf)]
+	}
+	reqBuf, err := snappy.Decode(c.buf, req)
+	c.buf = reqBuf
 	if err != nil {
 		return err
 	}
@@ -349,6 +446,10 @@ func (c *TestStorageClient) Name() string {
 	return "teststorageclient"
 }
 
+func (c *TestStorageClient) Endpoint() string {
+	return "http://test-remote.com/1234"
+}
+
 // TestBlockingStorageClient is a queue_manager StorageClient which will block
 // on any calls to Store(), until the request's Context is cancelled, at which
 // point the `numCalls` property will contain a count of how many times Store()
@@ -375,6 +476,43 @@ func (c *TestBlockingStorageClient) Name() string {
 	return "testblockingstorageclient"
 }
 
+func (c *TestBlockingStorageClient) Endpoint() string {
+	return "http://test-remote-blocking.com/1234"
+}
+
+func BenchmarkSampleDelivery(b *testing.B) {
+	// Let's create an even number of send batches so we don't run into the
+	// batch timeout case.
+	n := config.DefaultQueueConfig.MaxSamplesPerSend * 10
+	samples, series := createTimeseries(n)
+
+	c := NewTestStorageClient()
+
+	cfg := config.DefaultQueueConfig
+	cfg.BatchSendDeadline = model.Duration(100 * time.Millisecond)
+	cfg.MaxShards = 1
+
+	dir, err := ioutil.TempDir("", "BenchmarkSampleDelivery")
+	testutil.Ok(b, err)
+	defer os.RemoveAll(dir)
+
+	m := NewQueueManager(nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, nil, nil, c, defaultFlushDeadline)
+	m.StoreSeries(series, 0)
+
+	// These should be received by the client.
+	m.Start()
+	defer m.Stop()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		c.expectSampleCount(samples)
+		m.Append(samples)
+		c.waitForExpectedSampleCount()
+	}
+	// Do not include shutdown
+	b.StopTimer()
+}
+
 func BenchmarkStartup(b *testing.B) {
 	dir := os.Getenv("WALDIR")
 	if dir == "" {
@@ -399,12 +537,43 @@ func BenchmarkStartup(b *testing.B) {
 
 	for n := 0; n < b.N; n++ {
 		c := NewTestBlockedStorageClient()
-		m := NewQueueManager(logger, dir,
+		m := NewQueueManager(nil, logger, dir,
 			newEWMARate(ewmaWeight, shardUpdateDuration),
 			config.DefaultQueueConfig, nil, nil, c, 1*time.Minute)
-		m.watcher.startTime = math.MaxInt64
-		m.watcher.maxSegment = segments[len(segments)-2]
-		err := m.watcher.run()
+		m.watcher.SetStartTime(timestamp.Time(math.MaxInt64))
+		m.watcher.MaxSegment = segments[len(segments)-2]
+		err := m.watcher.Run()
 		testutil.Ok(b, err)
+	}
+}
+
+func TestProcessExternalLabels(t *testing.T) {
+	for _, tc := range []struct {
+		labels         labels.Labels
+		externalLabels labels.Labels
+		expected       labels.Labels
+	}{
+		// Test adding labels at the end.
+		{
+			labels:         labels.Labels{{Name: "a", Value: "b"}},
+			externalLabels: labels.Labels{{Name: "c", Value: "d"}},
+			expected:       labels.Labels{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}},
+		},
+
+		// Test adding labels at the beginning.
+		{
+			labels:         labels.Labels{{Name: "c", Value: "d"}},
+			externalLabels: labels.Labels{{Name: "a", Value: "b"}},
+			expected:       labels.Labels{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}},
+		},
+
+		// Test we don't override existing labels.
+		{
+			labels:         labels.Labels{{Name: "a", Value: "b"}},
+			externalLabels: labels.Labels{{Name: "a", Value: "c"}},
+			expected:       labels.Labels{{Name: "a", Value: "b"}},
+		},
+	} {
+		testutil.Equals(t, tc.expected, processExternalLabels(tc.labels, tc.externalLabels))
 	}
 }

@@ -17,6 +17,7 @@ import (
 	"container/heap"
 	"context"
 	"fmt"
+	"github.com/prometheus/prometheus/storage/tsdb"
 	"math"
 	"regexp"
 	"runtime"
@@ -28,15 +29,16 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	"github.com/opentracing/opentracing-go"
+	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/pkg/gate"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/storage/tsdb"
 	"github.com/prometheus/prometheus/util/stats"
 )
 
@@ -61,20 +63,22 @@ var (
 	// a subquery in milliseconds.
 	DefaultEvaluationInterval int64
 
-	supportedV3ioFunctions = map[string]bool{"max_over_time": true,
+	supportedV3ioFunctions = map[string]bool{
+		"max_over_time":    true,
 		"min_over_time":    true,
 		"avg_over_time":    true,
 		"sum_over_time":    true,
 		"count_over_time":  true,
 		"stddev_over_time": true,
 		"stdvar_over_time": true}
-	supportedV3ioAggregations = map[ItemType]bool{itemAvg: true,
-		itemCount:  true,
-		itemSum:    true,
-		itemMin:    true,
-		itemMax:    true,
-		itemStddev: true,
-		itemStdvar: true}
+	supportedV3ioAggregations = map[ItemType]bool{
+		AVG:    true,
+		COUNT:  true,
+		SUM:    true,
+		MIN:    true,
+		MAX:    true,
+		STDDEV: true,
+		STDVAR: true}
 )
 
 // SetDefaultEvaluationInterval sets DefaultEvaluationInterval.
@@ -190,18 +194,28 @@ func (q *query) Exec(ctx context.Context) *Result {
 		span.SetTag(queryTag, q.stmt.String())
 	}
 
+	// Log query in active log.
+	var queryIndex int
+	if q.ng.activeQueryTracker != nil {
+		queryIndex = q.ng.activeQueryTracker.Insert(q.q)
+	}
+
+	// Exec query.
 	res, warnings, err := q.ng.exec(ctx, q)
+
+	// Delete query from active log.
+	if q.ng.activeQueryTracker != nil {
+		q.ng.activeQueryTracker.Delete(queryIndex)
+	}
 	return &Result{Err: err, Value: res, Warnings: warnings}
 }
 
 // contextDone returns an error if the context was canceled or timed out.
 func contextDone(ctx context.Context, env string) error {
-	select {
-	case <-ctx.Done():
-		return contextErr(ctx.Err(), env)
-	default:
-		return nil
+	if err := ctx.Err(); err != nil {
+		return contextErr(err, env)
 	}
+	return nil
 }
 
 func contextErr(err error, env string) error {
@@ -217,11 +231,12 @@ func contextErr(err error, env string) error {
 
 // EngineOpts contains configuration options used when creating a new Engine.
 type EngineOpts struct {
-	Logger        log.Logger
-	Reg           prometheus.Registerer
-	MaxConcurrent int
-	MaxSamples    int
-	Timeout       time.Duration
+	Logger             log.Logger
+	Reg                prometheus.Registerer
+	MaxConcurrent      int
+	MaxSamples         int
+	Timeout            time.Duration
+	ActiveQueryTracker *ActiveQueryTracker
 }
 
 // Engine handles the lifetime of queries from beginning to end.
@@ -232,6 +247,7 @@ type Engine struct {
 	timeout            time.Duration
 	gate               *gate.Gate
 	maxSamplesPerQuery int
+	activeQueryTracker *ActiveQueryTracker
 
 	UseV3ioAggregations bool // Indicate whether or not to use v3io aggregations by default (passed from prometheus.yml)
 }
@@ -261,6 +277,7 @@ func NewEngine(opts EngineOpts) *Engine {
 			Name:        "query_duration_seconds",
 			Help:        "Query timings",
 			ConstLabels: prometheus.Labels{"slice": "queue_time"},
+			Objectives:  map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
 		}),
 		queryPrepareTime: prometheus.NewSummary(prometheus.SummaryOpts{
 			Namespace:   namespace,
@@ -268,6 +285,7 @@ func NewEngine(opts EngineOpts) *Engine {
 			Name:        "query_duration_seconds",
 			Help:        "Query timings",
 			ConstLabels: prometheus.Labels{"slice": "prepare_time"},
+			Objectives:  map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
 		}),
 		queryInnerEval: prometheus.NewSummary(prometheus.SummaryOpts{
 			Namespace:   namespace,
@@ -275,6 +293,7 @@ func NewEngine(opts EngineOpts) *Engine {
 			Name:        "query_duration_seconds",
 			Help:        "Query timings",
 			ConstLabels: prometheus.Labels{"slice": "inner_eval"},
+			Objectives:  map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
 		}),
 		queryResultSort: prometheus.NewSummary(prometheus.SummaryOpts{
 			Namespace:   namespace,
@@ -282,6 +301,7 @@ func NewEngine(opts EngineOpts) *Engine {
 			Name:        "query_duration_seconds",
 			Help:        "Query timings",
 			ConstLabels: prometheus.Labels{"slice": "result_sort"},
+			Objectives:  map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
 		}),
 	}
 	metrics.maxConcurrentQueries.Set(float64(opts.MaxConcurrent))
@@ -296,12 +316,14 @@ func NewEngine(opts EngineOpts) *Engine {
 			metrics.queryResultSort,
 		)
 	}
+
 	return &Engine{
 		gate:               gate.New(opts.MaxConcurrent),
 		timeout:            opts.Timeout,
 		logger:             opts.Logger,
 		metrics:            metrics,
 		maxSamplesPerQuery: opts.MaxSamples,
+		activeQueryTracker: opts.ActiveQueryTracker,
 	}
 }
 
@@ -325,7 +347,7 @@ func (ng *Engine) NewRangeQuery(q storage.Queryable, qs string, start, end time.
 		return nil, err
 	}
 	if expr.Type() != ValueTypeVector && expr.Type() != ValueTypeScalar {
-		return nil, fmt.Errorf("invalid expression type %q for range query, must be Scalar or instant Vector", documentedType(expr.Type()))
+		return nil, errors.Errorf("invalid expression type %q for range query, must be Scalar or instant Vector", documentedType(expr.Type()))
 	}
 	qry := ng.newQuery(q, expr, start, end, interval)
 	qry.q = qs
@@ -409,7 +431,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (Value, storage.Warnings, 
 		return nil, nil, s(ctx)
 	}
 
-	panic(fmt.Errorf("promql.Engine.exec: unhandled statement of type %T", q.Statement()))
+	panic(errors.Errorf("promql.Engine.exec: unhandled statement of type %T", q.Statement()))
 }
 
 func timeMilliseconds(t time.Time) int64 {
@@ -460,7 +482,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 
 		mat, ok := val.(Matrix)
 		if !ok {
-			panic(fmt.Errorf("promql.Engine.exec: invalid expression type %q", val.Type()))
+			panic(errors.Errorf("promql.Engine.exec: invalid expression type %q", val.Type()))
 		}
 		query.matrix = mat
 		switch s.Expr.Type() {
@@ -478,7 +500,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 		case ValueTypeMatrix:
 			return mat, warnings, nil
 		default:
-			panic(fmt.Errorf("promql.Engine.exec: unexpected expression type %q", s.Expr.Type()))
+			panic(errors.Errorf("promql.Engine.exec: unexpected expression type %q", s.Expr.Type()))
 		}
 
 	}
@@ -502,7 +524,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 
 	mat, ok := val.(Matrix)
 	if !ok {
-		panic(fmt.Errorf("promql.Engine.exec: invalid expression type %q", val.Type()))
+		panic(errors.Errorf("promql.Engine.exec: invalid expression type %q", val.Type()))
 	}
 	query.matrix = mat
 
@@ -558,6 +580,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 	})
 
 	mint := s.Start.Add(-maxOffset)
+
 	querier, err := q.Querier(ctx, timestamp.FromTime(mint), timestamp.FromTime(s.End))
 	if err != nil {
 		return nil, nil, err
@@ -574,12 +597,19 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 			Step:  durationToInt64Millis(s.Interval),
 		}
 
-		querier.(*tsdb.V3ioPromQuerier).UseAggregates = isV3ioEligibleQueryExpr(s.Expr)
+		// We need to make sure we select the timerange selected by the subquery.
+		// TODO(gouthamve): cumulativeSubqueryOffset gives the sum of range and the offset
+		// we can optimise it by separating out the range and offsets, and subtracting the offsets
+		// from end also.
+		subqOffset := ng.cumulativeSubqueryOffset(path)
+		offsetMilliseconds := durationMilliseconds(subqOffset)
+		params.Start = params.Start - offsetMilliseconds
 
 		switch n := node.(type) {
 		case *VectorSelector:
 			params.Start = params.Start - durationMilliseconds(LookbackDelta)
 			params.Func = extractFuncFromPath(path)
+			params.By, params.Grouping = extractGroupsFromPath(path)
 			params.AggregationWindow = aggregationWindow
 			if n.Offset > 0 {
 				offsetMilliseconds := durationMilliseconds(n.Offset)
@@ -600,6 +630,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 
 		case *MatrixSelector:
 			params.Func = extractFuncFromPath(path)
+			params.Range = durationMilliseconds(n.Range)
 			// For all matrix queries we want to ensure that we have (end-start) + range selected
 			// this way we have `range` data before the start time
 			params.Start = params.Start - durationMilliseconds(n.Range)
@@ -643,6 +674,18 @@ func extractFuncFromPath(p []Node) string {
 		return ""
 	}
 	return extractFuncFromPath(p[:len(p)-1])
+}
+
+// extractGroupsFromPath parses vector outer function and extracts grouping information if by or without was used.
+func extractGroupsFromPath(p []Node) (bool, []string) {
+	if len(p) == 0 {
+		return false, nil
+	}
+	switch n := p[len(p)-1].(type) {
+	case *AggregateExpr:
+		return !n.Without, n.Grouping
+	}
+	return false, nil
 }
 
 func checkForSeriesSetExpansion(ctx context.Context, expr Expr) {
@@ -700,7 +743,7 @@ type evaluator struct {
 
 // errorf causes a panic with the input formatted into an error.
 func (ev *evaluator) errorf(format string, args ...interface{}) {
-	ev.error(fmt.Errorf(format, args...))
+	ev.error(errors.Errorf(format, args...))
 }
 
 // error causes a panic with the given error.
@@ -720,7 +763,7 @@ func (ev *evaluator) recover(errp *error) {
 		buf = buf[:runtime.Stack(buf, false)]
 
 		level.Error(ev.logger).Log("msg", "runtime panic in parser", "err", e, "stacktrace", string(buf))
-		*errp = fmt.Errorf("unexpected error: %s", err)
+		*errp = errors.Wrap(err, "unexpected error")
 	} else {
 		*errp = e.(error)
 	}
@@ -825,6 +868,9 @@ func (ev *evaluator) rangeEval(f func([]Value, *EvalNodeHelper) Vector, exprs ..
 	seriess := make(map[uint64]Series, biggestLen) // Output series by series hash.
 	tempNumSamples := ev.currentSamples
 	for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
+		if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
+			ev.error(err)
+		}
 		// Reset number of samples in memory after each timestamp.
 		ev.currentSamples = tempNumSamples
 		// Gather input vectors for this timestamp.
@@ -1066,6 +1112,8 @@ func (ev *evaluator) eval(expr Expr) Value {
 				} else {
 					ev.error(ErrTooManySamples(env))
 				}
+			} else {
+				putPointSlice(ss.Points)
 			}
 		}
 		if mat.ContainsSameLabelset() {
@@ -1080,7 +1128,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 	case *UnaryExpr:
 		mat := ev.eval(e.Expr).(Matrix)
-		if e.Op == itemSUB {
+		if e.Op == SUB {
 			for i := range mat {
 				mat[i].Metric = dropMetricName(mat[i].Metric)
 				for j := range mat[i].Points {
@@ -1102,15 +1150,15 @@ func (ev *evaluator) eval(expr Expr) Value {
 			}, e.LHS, e.RHS)
 		case lt == ValueTypeVector && rt == ValueTypeVector:
 			switch e.Op {
-			case itemLAND:
+			case LAND:
 				return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
 					return ev.VectorAnd(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh)
 				}, e.LHS, e.RHS)
-			case itemLOR:
+			case LOR:
 				return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
 					return ev.VectorOr(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh)
 				}, e.LHS, e.RHS)
-			case itemLUnless:
+			case LUNLESS:
 				return ev.rangeEval(func(v []Value, enh *EvalNodeHelper) Vector {
 					return ev.VectorUnless(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh)
 				}, e.LHS, e.RHS)
@@ -1161,6 +1209,8 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 			if len(ss.Points) > 0 {
 				mat = append(mat, ss)
+			} else {
+				putPointSlice(ss.Points)
 			}
 
 		}
@@ -1168,7 +1218,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 	case *MatrixSelector:
 		if ev.startTimestamp != ev.endTimestamp {
-			panic(fmt.Errorf("cannot do range evaluation of matrix selector"))
+			panic(errors.New("cannot do range evaluation of matrix selector"))
 		}
 		return ev.matrixSelector(e)
 
@@ -1202,7 +1252,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		return res
 	}
 
-	panic(fmt.Errorf("unhandled expression of type: %T", expr))
+	panic(errors.Errorf("unhandled expression of type: %T", expr))
 }
 
 func durationToInt64Millis(d time.Duration) int64 {
@@ -1550,13 +1600,17 @@ func (ev *evaluator) VectorBinop(op ItemType, lhs, rhs Vector, matching *VectorM
 // signatureFunc returns a function that calculates the signature for a metric
 // ignoring the provided labels. If on, then the given labels are only used instead.
 func signatureFunc(on bool, names ...string) func(labels.Labels) uint64 {
-	// TODO(fabxc): ensure names are sorted and then use that and sortedness
-	// of labels by names to speed up the operations below.
-	// Alternatively, inline the hashing and don't build new label sets.
+	sort.Strings(names)
 	if on {
-		return func(lset labels.Labels) uint64 { return lset.HashForLabels(names...) }
+		return func(lset labels.Labels) uint64 {
+			h, _ := lset.HashForLabels(make([]byte, 0, 1024), names...)
+			return h
+		}
 	}
-	return func(lset labels.Labels) uint64 { return lset.HashWithoutLabels(names...) }
+	return func(lset labels.Labels) uint64 {
+		h, _ := lset.HashWithoutLabels(make([]byte, 0, 1024), names...)
+		return h
+	}
 }
 
 // resultMetric returns the metric for the given sample(s) based on the Vector
@@ -1620,6 +1674,11 @@ func (ev *evaluator) VectorscalarBinop(op ItemType, lhs Vector, rhs Scalar, swap
 			lv, rv = rv, lv
 		}
 		value, keep := vectorElemBinop(op, lv, rv)
+		// Catch cases where the scalar is the LHS in a scalar-vector comparison operation.
+		// We want to always keep the vector element value as the output value, even if it's on the RHS.
+		if op.isComparisonOperator() && swap {
+			value = rv
+		}
 		if returnBool {
 			if keep {
 				value = 1.0
@@ -1646,63 +1705,63 @@ func dropMetricName(l labels.Labels) labels.Labels {
 // scalarBinop evaluates a binary operation between two Scalars.
 func scalarBinop(op ItemType, lhs, rhs float64) float64 {
 	switch op {
-	case itemADD:
+	case ADD:
 		return lhs + rhs
-	case itemSUB:
+	case SUB:
 		return lhs - rhs
-	case itemMUL:
+	case MUL:
 		return lhs * rhs
-	case itemDIV:
+	case DIV:
 		return lhs / rhs
-	case itemPOW:
+	case POW:
 		return math.Pow(lhs, rhs)
-	case itemMOD:
+	case MOD:
 		return math.Mod(lhs, rhs)
-	case itemEQL:
+	case EQL:
 		return btos(lhs == rhs)
-	case itemNEQ:
+	case NEQ:
 		return btos(lhs != rhs)
-	case itemGTR:
+	case GTR:
 		return btos(lhs > rhs)
-	case itemLSS:
+	case LSS:
 		return btos(lhs < rhs)
-	case itemGTE:
+	case GTE:
 		return btos(lhs >= rhs)
-	case itemLTE:
+	case LTE:
 		return btos(lhs <= rhs)
 	}
-	panic(fmt.Errorf("operator %q not allowed for Scalar operations", op))
+	panic(errors.Errorf("operator %q not allowed for Scalar operations", op))
 }
 
 // vectorElemBinop evaluates a binary operation between two Vector elements.
 func vectorElemBinop(op ItemType, lhs, rhs float64) (float64, bool) {
 	switch op {
-	case itemADD:
+	case ADD:
 		return lhs + rhs, true
-	case itemSUB:
+	case SUB:
 		return lhs - rhs, true
-	case itemMUL:
+	case MUL:
 		return lhs * rhs, true
-	case itemDIV:
+	case DIV:
 		return lhs / rhs, true
-	case itemPOW:
+	case POW:
 		return math.Pow(lhs, rhs), true
-	case itemMOD:
+	case MOD:
 		return math.Mod(lhs, rhs), true
-	case itemEQL:
+	case EQL:
 		return lhs, lhs == rhs
-	case itemNEQ:
+	case NEQ:
 		return lhs, lhs != rhs
-	case itemGTR:
+	case GTR:
 		return lhs, lhs > rhs
-	case itemLSS:
+	case LSS:
 		return lhs, lhs < rhs
-	case itemGTE:
+	case GTE:
 		return lhs, lhs >= rhs
-	case itemLTE:
+	case LTE:
 		return lhs, lhs <= rhs
 	}
-	panic(fmt.Errorf("operator %q not allowed for operations between Vectors", op))
+	panic(errors.Errorf("operator %q not allowed for operations between Vectors", op))
 }
 
 type groupedAggregation struct {
@@ -1719,7 +1778,7 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 
 	result := map[uint64]*groupedAggregation{}
 	var k int64
-	if op == itemTopK || op == itemBottomK {
+	if op == TOPK || op == BOTTOMK {
 		f := param.(float64)
 		if !convertibleToInt64(f) {
 			ev.errorf("Scalar value %v overflows int64", f)
@@ -1730,11 +1789,11 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 		}
 	}
 	var q float64
-	if op == itemQuantile {
+	if op == QUANTILE {
 		q = param.(float64)
 	}
 	var valueLabel string
-	if op == itemCountValues {
+	if op == COUNT_VALUES {
 		valueLabel = param.(string)
 		if !model.LabelName(valueLabel).IsValid() {
 			ev.errorf("invalid label name %q", valueLabel)
@@ -1744,11 +1803,14 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 		}
 	}
 
+	sort.Strings(grouping)
+	lb := labels.NewBuilder(nil)
+	buf := make([]byte, 0, 1024)
 	for _, s := range vec {
 		metric := s.Metric
 
-		if op == itemCountValues {
-			lb := labels.NewBuilder(metric)
+		if op == COUNT_VALUES {
+			lb.Reset(metric)
 			lb.Set(valueLabel, strconv.FormatFloat(s.V, 'f', -1, 64))
 			metric = lb.Labels()
 		}
@@ -1757,9 +1819,9 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			groupingKey uint64
 		)
 		if without {
-			groupingKey = metric.HashWithoutLabels(grouping...)
+			groupingKey, buf = metric.HashWithoutLabels(buf, grouping...)
 		} else {
-			groupingKey = metric.HashForLabels(grouping...)
+			groupingKey, buf = metric.HashForLabels(buf, grouping...)
 		}
 
 		group, ok := result[groupingKey]
@@ -1768,7 +1830,7 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			var m labels.Labels
 
 			if without {
-				lb := labels.NewBuilder(metric)
+				lb.Reset(metric)
 				lb.Del(grouping...)
 				lb.Del(labels.MetricName)
 				m = lb.Labels()
@@ -1795,15 +1857,15 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			if k > inputVecLen {
 				resultSize = inputVecLen
 			}
-			if op == itemStdvar || op == itemStddev {
+			if op == STDVAR || op == STDDEV {
 				result[groupingKey].value = 0.0
-			} else if op == itemTopK || op == itemQuantile {
+			} else if op == TOPK || op == QUANTILE {
 				result[groupingKey].heap = make(vectorByValueHeap, 0, resultSize)
 				heap.Push(&result[groupingKey].heap, &Sample{
 					Point:  Point{V: s.V},
 					Metric: s.Metric,
 				})
-			} else if op == itemBottomK {
+			} else if op == BOTTOMK {
 				result[groupingKey].reverseHeap = make(vectorByReverseValueHeap, 0, resultSize)
 				heap.Push(&result[groupingKey].reverseHeap, &Sample{
 					Point:  Point{V: s.V},
@@ -1814,33 +1876,33 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 		}
 
 		switch op {
-		case itemSum:
+		case SUM:
 			group.value += s.V
 
-		case itemAvg:
+		case AVG:
 			group.groupCount++
 			group.mean += (s.V - group.mean) / float64(group.groupCount)
 
-		case itemMax:
+		case MAX:
 			if group.value < s.V || math.IsNaN(group.value) {
 				group.value = s.V
 			}
 
-		case itemMin:
+		case MIN:
 			if group.value > s.V || math.IsNaN(group.value) {
 				group.value = s.V
 			}
 
-		case itemCount, itemCountValues:
+		case COUNT, COUNT_VALUES:
 			group.groupCount++
 
-		case itemStdvar, itemStddev:
+		case STDVAR, STDDEV:
 			group.groupCount++
 			delta := s.V - group.mean
 			group.mean += delta / float64(group.groupCount)
 			group.value += delta * (s.V - group.mean)
 
-		case itemTopK:
+		case TOPK:
 			if int64(len(group.heap)) < k || group.heap[0].V < s.V || math.IsNaN(group.heap[0].V) {
 				if int64(len(group.heap)) == k {
 					heap.Pop(&group.heap)
@@ -1851,7 +1913,7 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 				})
 			}
 
-		case itemBottomK:
+		case BOTTOMK:
 			if int64(len(group.reverseHeap)) < k || group.reverseHeap[0].V > s.V || math.IsNaN(group.reverseHeap[0].V) {
 				if int64(len(group.reverseHeap)) == k {
 					heap.Pop(&group.reverseHeap)
@@ -1862,30 +1924,30 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 				})
 			}
 
-		case itemQuantile:
+		case QUANTILE:
 			group.heap = append(group.heap, s)
 
 		default:
-			panic(fmt.Errorf("expected aggregation operator but got %q", op))
+			panic(errors.Errorf("expected aggregation operator but got %q", op))
 		}
 	}
 
 	// Construct the result Vector from the aggregated groups.
 	for _, aggr := range result {
 		switch op {
-		case itemAvg:
+		case AVG:
 			aggr.value = aggr.mean
 
-		case itemCount, itemCountValues:
+		case COUNT, COUNT_VALUES:
 			aggr.value = float64(aggr.groupCount)
 
-		case itemStdvar:
+		case STDVAR:
 			aggr.value = aggr.value / float64(aggr.groupCount)
 
-		case itemStddev:
+		case STDDEV:
 			aggr.value = math.Sqrt(aggr.value / float64(aggr.groupCount))
 
-		case itemTopK:
+		case TOPK:
 			// The heap keeps the lowest value on top, so reverse it.
 			sort.Sort(sort.Reverse(aggr.heap))
 			for _, v := range aggr.heap {
@@ -1896,7 +1958,7 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			}
 			continue // Bypass default append.
 
-		case itemBottomK:
+		case BOTTOMK:
 			// The heap keeps the lowest value on top, so reverse it.
 			sort.Sort(sort.Reverse(aggr.reverseHeap))
 			for _, v := range aggr.reverseHeap {
@@ -1907,7 +1969,7 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			}
 			continue // Bypass default append.
 
-		case itemQuantile:
+		case QUANTILE:
 			aggr.value = quantile(q, aggr.heap)
 
 		default:
@@ -1970,7 +2032,7 @@ func btos(b bool) float64 {
 // result of the op operation.
 func shouldDropMetricName(op ItemType) bool {
 	switch op {
-	case itemADD, itemSUB, itemDIV, itemMUL, itemMOD:
+	case ADD, SUB, DIV, MUL, POW, MOD:
 		return true
 	default:
 		return false

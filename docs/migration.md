@@ -1,6 +1,6 @@
 ---
 title: Migration
-sort_rank: 7
+sort_rank: 8
 ---
 
 # Prometheus 2.0 migration guide
@@ -20,7 +20,7 @@ Some notable flags which have been removed:
 
 - `-alertmanager.url` In Prometheus 2.0, the command line flags for configuring
   a static Alertmanager URL have been removed. Alertmanager must now be
-  discovered via service discovery, see [Alertmanager service discovery](#amsd).
+  discovered via service discovery, see [Alertmanager service discovery](#alertmanager-service-discovery).
 
 - `-log.format` In Prometheus 2.0 logs can only be streamed to standard error.
 

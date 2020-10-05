@@ -26,7 +26,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb"
 
 	"github.com/alecthomas/units"
 	"github.com/go-kit/kit/log"
@@ -266,6 +266,9 @@ type Options struct {
 	// When true it disables the overlapping blocks check.
 	// This in-turn enables vertical compaction and vertical query merge.
 	AllowOverlappingBlocks bool
+
+	// When true records in the WAL will be compressed.
+	WALCompression bool
 }
 
 // Open returns a new storage backed by a TSDB database that is configured for Prometheus.
