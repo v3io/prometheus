@@ -137,7 +137,7 @@ func (s *ReadyStorage) Querier(ctx context.Context, mint, maxt int64) (storage.Q
 
 // Appender implements the Storage interface.
 func (s *ReadyStorage) Appender() (storage.Appender, error) {
-	s.logger.Log("msg", "Appended requested")
+	s.logger.Log("msg", "Appender requested")
 
 	if s.error != nil {
 		return nil, errors.Wrap(s.error, "cannot return an appender without an adapter")

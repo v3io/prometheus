@@ -245,6 +245,10 @@ type Labels struct {
 	lbls *labels.Labels
 }
 
+func (ls Labels) String() string {
+	return fmt.Sprint(ls.lbls)
+}
+
 // convert Label set to a string in the form key1=v1,key2=v2.. + name + hash
 func (ls Labels) GetKey() (string, string, uint64) {
 	var keyBuilder strings.Builder
