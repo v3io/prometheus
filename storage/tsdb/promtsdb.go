@@ -276,6 +276,11 @@ func (ls Labels) GetKey() (string, string, uint64) {
 
 }
 
+
+func (ls Labels) HashWithName() uint64 {
+	return ls.lbls.Hash()
+}
+
 // create update expression
 func (ls Labels) GetExpr() string {
 	var lblExprBuilder strings.Builder

@@ -343,7 +343,7 @@ github.com/v3io/v3io-go/pkg/dataplane
 github.com/v3io/v3io-go/pkg/dataplane/http
 github.com/v3io/v3io-go/pkg/dataplane/schemas/node/common
 github.com/v3io/v3io-go/pkg/errors
-# github.com/v3io/v3io-tsdb v0.11.0 => github.com/v3io/v3io-tsdb v0.9.20-0.20201008160240-68087d4edb0a
+# github.com/v3io/v3io-tsdb v0.11.0 => github.com/v3io/v3io-tsdb v0.9.20-0.20201008162456-b19029695f34
 github.com/v3io/v3io-tsdb/internal/pkg/performance
 github.com/v3io/v3io-tsdb/pkg/aggregate
 github.com/v3io/v3io-tsdb/pkg/appender

@@ -62,7 +62,7 @@ require (
 replace (
 	github.com/golang/lint => golang.org/x/lint v0.0.0-20190409202823-959b441ac422
 	github.com/v3io/frames => github.com/v3io/frames v0.8.1
-	github.com/v3io/v3io-tsdb => github.com/v3io/v3io-tsdb v0.9.20-0.20201008160240-68087d4edb0a
+	github.com/v3io/v3io-tsdb => github.com/v3io/v3io-tsdb v0.9.20-0.20201008162456-b19029695f34
 	google.golang.org/grpc => google.golang.org/grpc v1.19.1
 	k8s.io/klog => github.com/simonpasquier/klog-gokit v0.1.0
 )
