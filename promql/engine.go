@@ -464,14 +464,14 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	if s.Start == s.End && s.Interval == 0 {
 		start := timeMilliseconds(s.Start)
 		evaluator := &evaluator{
-			startTimestamp:      start,
-			endTimestamp:        start,
-			interval:            1,
-			ctx:                 ctxInnerEval,
-			maxSamples:          ng.maxSamplesPerQuery,
-			defaultEvalInterval: GetDefaultEvaluationInterval(),
-			logger:              ng.logger,
-			useV3ioAggregations: querier.(*tsdb.V3ioPromQuerier).UseV3ioAggregations(),
+			startTimestamp:          start,
+			endTimestamp:            start,
+			interval:                1,
+			ctx:                     ctxInnerEval,
+			maxSamples:              ng.maxSamplesPerQuery,
+			defaultEvalInterval:     GetDefaultEvaluationInterval(),
+			logger:                  ng.logger,
+			isAlreadyV3IOAggregated: querier.(*tsdb.V3ioPromQuerier).IsAlreadyAggregated,
 		}
 		val, err := evaluator.Eval(s.Expr)
 		if err != nil {
@@ -507,14 +507,14 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 
 	// Range evaluation.
 	evaluator := &evaluator{
-		startTimestamp:      timeMilliseconds(s.Start),
-		endTimestamp:        timeMilliseconds(s.End),
-		interval:            durationMilliseconds(s.Interval),
-		ctx:                 ctxInnerEval,
-		maxSamples:          ng.maxSamplesPerQuery,
-		defaultEvalInterval: GetDefaultEvaluationInterval(),
-		logger:              ng.logger,
-		useV3ioAggregations: querier.(*tsdb.V3ioPromQuerier).UseV3ioAggregations(),
+		startTimestamp:          timeMilliseconds(s.Start),
+		endTimestamp:            timeMilliseconds(s.End),
+		interval:                durationMilliseconds(s.Interval),
+		ctx:                     ctxInnerEval,
+		maxSamples:              ng.maxSamplesPerQuery,
+		defaultEvalInterval:     GetDefaultEvaluationInterval(),
+		logger:                  ng.logger,
+		isAlreadyV3IOAggregated: querier.(*tsdb.V3ioPromQuerier).IsAlreadyAggregated,
 	}
 	val, err := evaluator.Eval(s.Expr)
 	if err != nil {
@@ -556,6 +556,7 @@ func (ng *Engine) cumulativeSubqueryOffset(path []Node) time.Duration {
 func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *EvalStmt) (storage.Querier, storage.Warnings, error) {
 	var maxOffset time.Duration
 	var aggregationWindow int64
+	var subQueryStep int64
 
 	Inspect(s.Expr, func(node Node, path []Node) error {
 		subqOffset := ng.cumulativeSubqueryOffset(path)
@@ -568,13 +569,17 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 				maxOffset = n.Offset + LookbackDelta + subqOffset
 			}
 		case *MatrixSelector:
-			aggregationWindow = n.Range.Nanoseconds() / 1000000
+			aggregationWindow = durationToInt64Millis(n.Range)
 			if maxOffset < n.Range+subqOffset {
 				maxOffset = n.Range + subqOffset
 			}
 			if n.Offset+n.Range+subqOffset > maxOffset {
 				maxOffset = n.Offset + n.Range + subqOffset
 			}
+		case *SubqueryExpr:
+			// Save the step if it is provided in a subquery rather than as an interval
+			// Example query: `sum(metric)[1h:10m]` -> step=10m
+			subQueryStep = durationToInt64Millis(n.Step)
 		}
 		return nil
 	})
@@ -591,10 +596,16 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 	Inspect(s.Expr, func(node Node, path []Node) error {
 		var set storage.SeriesSet
 		var wrn storage.Warnings
+
+		// Get the Step from the sub query, in case the interval is not set.
+		step := durationToInt64Millis(s.Interval)
+		if step == 0 {
+			step = subQueryStep
+		}
 		params := &storage.SelectParams{
 			Start: timestamp.FromTime(s.Start),
 			End:   timestamp.FromTime(s.End),
-			Step:  durationToInt64Millis(s.Interval),
+			Step:  step,
 		}
 
 		// We need to make sure we select the timerange selected by the subquery.
@@ -607,6 +618,9 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 
 		switch n := node.(type) {
 		case *VectorSelector:
+			// Validate if the current query can be aggregated via v3io
+			querier.(*tsdb.V3ioPromQuerier).UseAggregates = isV3ioEligibleQueryExpr(path)
+
 			params.Start = params.Start - durationMilliseconds(LookbackDelta)
 			params.Func = extractFuncFromPath(path)
 			params.By, params.Grouping = extractGroupsFromPath(path)
@@ -629,6 +643,9 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 			n.unexpandedSeriesSet = set
 
 		case *MatrixSelector:
+			// Validate if the current query can be aggregated via v3io
+			querier.(*tsdb.V3ioPromQuerier).UseAggregates = isV3ioEligibleQueryExpr(path)
+
 			params.Func = extractFuncFromPath(path)
 			params.Range = durationMilliseconds(n.Range)
 			// For all matrix queries we want to ensure that we have (end-start) + range selected
@@ -738,7 +755,7 @@ type evaluator struct {
 	defaultEvalInterval int64
 	logger              log.Logger
 
-	useV3ioAggregations bool // Indicates whether v3io tsdb already queried and aggregated the data, or just returned raw data
+	isAlreadyV3IOAggregated func(op string) bool // Indicates whether v3io tsdb already queried and aggregated the data, or just returned raw data
 }
 
 // errorf causes a panic with the input formatted into an error.
@@ -980,7 +997,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 
 	switch e := expr.(type) {
 	case *AggregateExpr:
-		if ev.useV3ioAggregations {
+		if ev.isAlreadyV3IOAggregated(e.Op.String()) {
 			return ev.emptyAggregation(e.Expr)
 		}
 		if s, ok := e.Param.(*StringLiteral); ok {
@@ -1038,9 +1055,10 @@ func (ev *evaluator) eval(expr Expr) Value {
 		// Evaluate any non-matrix arguments.
 		otherArgs := make([]Matrix, len(e.Args))
 		otherInArgs := make([]Vector, len(e.Args))
+		function := e.Func.Name
 		for i, e := range e.Args {
 			if i != matrixArgIndex {
-				if ev.useV3ioAggregations {
+				if ev.isAlreadyV3IOAggregated(function) {
 					return ev.emptyAggregation(e)
 				}
 
@@ -1226,14 +1244,14 @@ func (ev *evaluator) eval(expr Expr) Value {
 		offsetMillis := durationToInt64Millis(e.Offset)
 		rangeMillis := durationToInt64Millis(e.Range)
 		newEv := &evaluator{
-			endTimestamp:        ev.endTimestamp - offsetMillis,
-			interval:            ev.defaultEvalInterval,
-			ctx:                 ev.ctx,
-			currentSamples:      ev.currentSamples,
-			maxSamples:          ev.maxSamples,
-			defaultEvalInterval: ev.defaultEvalInterval,
-			logger:              ev.logger,
-			useV3ioAggregations: ev.useV3ioAggregations,
+			endTimestamp:            ev.endTimestamp - offsetMillis,
+			interval:                ev.defaultEvalInterval,
+			ctx:                     ev.ctx,
+			currentSamples:          ev.currentSamples,
+			maxSamples:              ev.maxSamples,
+			defaultEvalInterval:     ev.defaultEvalInterval,
+			logger:                  ev.logger,
+			isAlreadyV3IOAggregated: ev.isAlreadyV3IOAggregated,
 		}
 
 		if e.Step != 0 {
@@ -1996,28 +2014,34 @@ func isV3ioEligibleFunction(function string) bool {
 	return supportedV3ioFunctions[function]
 }
 
-func isV3ioEligibleQueryExpr(e Expr) bool {
-	switch expr := e.(type) {
+func isV3ioEligibleQueryExpr(p []Node) bool {
+	if len(p) == 0 {
+		return true
+	}
+	switch n := p[len(p)-1].(type) {
 	case *AggregateExpr:
-		if !isV3ioEligibleAggregation(expr.Op) {
+		if !isV3ioEligibleAggregation(n.Op) {
 			return false
 		}
-		if expr.Without {
+		if n.Without {
 			return false
 		}
 		// Currently only supports non-nested functions.
 		// Not supported - avg(max_over_time(cpu[10m])), Supported - avg(cpu)
-		if e, ok := expr.Expr.(*Call); ok {
+		if e, ok := n.Expr.(*Call); ok {
 			if e.Func != nil {
 				return false
 			}
 		}
 		return true
 	case *Call:
-		return isV3ioEligibleFunction(expr.Func.Name)
+		return isV3ioEligibleFunction(n.Func.Name)
+	case *BinaryExpr:
+		// If we hit a binary expression we terminate since we only care about functions
+		// or aggregations over a single metric.
+		return false
 	}
-
-	return false
+	return isV3ioEligibleQueryExpr(p[:len(p)-1])
 }
 
 // btos returns 1 if b is true, 0 otherwise.
