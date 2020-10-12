@@ -75,12 +75,20 @@ type V3ioPromQuerier struct {
 	logger      logger.Logger
 	mint, maxt  int64
 
-	UseAggregatesConfig bool // Indicate whether or not to use v3io aggregations by default (passed from prometheus.yml)
-	UseAggregates       bool // Indicate whether the current query is eligible for using v3io aggregations (should be set after creating a Querier instance)
+	UseAggregatesConfig    bool // Indicate whether or not to use v3io aggregations by default (passed from prometheus.yml)
+	UseAggregates          bool // Indicate whether the current query is eligible for using v3io aggregations (should be set after creating a Querier instance)
+	LastTSDBAggregatedAggr string
 }
 
 func (promQuery *V3ioPromQuerier) UseV3ioAggregations() bool {
 	return promQuery.UseAggregates && promQuery.UseAggregatesConfig
+}
+
+func (promQuery *V3ioPromQuerier) IsAlreadyAggregated(op string) bool {
+	if promQuery.UseV3ioAggregations() && promQuery.LastTSDBAggregatedAggr == op {
+		return true
+	}
+	return false
 }
 
 // Select returns a set of series that matches the given label matchers.
@@ -101,15 +109,23 @@ func (promQuery *V3ioPromQuerier) Select(params *storage.SelectParams, oms ...*l
 	promQuery.logger.Debug("SelectParams: %+v", params)
 	overTimeSuffix := "_over_time"
 
+	// Currently we do aggregations only for:
+	// 1. All Cross-series aggregation
+	// 2. Over-time aggregations where no Step or aggregationWindow was specified
+	// 3. Over-time aggregation for v3io-tsdb compatible aggregates
+	// 4. Down sampling - when only a step is provided
+	// Note: in addition to the above cases, we also take into consider the `UseAggregatesConfig` configuration and of
+	// course whether or not the requested aggregation is a valid v3io-tsdb aggregation
 	if params.Func != "" {
 		// only pass xx_over_time functions (just the xx part)
 		// TODO: support count/stdxx, require changes in Prometheus: promql/functions.go, not calc aggregate twice
 		if strings.HasSuffix(params.Func, overTimeSuffix) {
-			if promQuery.UseAggregates && promQuery.UseAggregatesConfig {
+			if promQuery.UseV3ioAggregations() {
 				function = strings.TrimSuffix(params.Func, overTimeSuffix)
 			} else {
 				f := params.Func[0:3]
-				if params.Step == 0 && (f == "min" || f == "max" || f == "sum" || f == "avg") {
+				if params.Step == 0 && params.AggregationWindow == 0 &&
+					(f == "min" || f == "max" || f == "sum" || f == "avg") {
 					function = f
 				} else {
 					noAggr = true
@@ -120,6 +136,10 @@ func (promQuery *V3ioPromQuerier) Select(params *storage.SelectParams, oms ...*l
 		}
 	}
 
+	if function != "" && !noAggr {
+		promQuery.LastTSDBAggregatedAggr = params.Func
+	}
+
 	selectParams := &pquerier.SelectParams{Name: name,
 		Functions:         function,
 		Step:              params.Step,
@@ -128,6 +148,8 @@ func (promQuery *V3ioPromQuerier) Select(params *storage.SelectParams, oms ...*l
 		To:                promQuery.maxt,
 		AggregationWindow: params.AggregationWindow}
 
+	promQuery.logger.DebugWith("Going to query tsdb", "params", selectParams,
+		"UseAggregates", promQuery.UseAggregates, "UseAggregatesConfig", promQuery.UseAggregatesConfig)
 	set, err := promQuery.v3ioQuerier.SelectProm(selectParams, noAggr)
 	return &V3ioPromSeriesSet{s: set}, nil, err
 }
@@ -274,6 +296,11 @@ func (ls Labels) GetKey() (string, string, uint64) {
 
 	return name, key, ls.lbls.Hash()
 
+}
+
+
+func (ls Labels) HashWithName() uint64 {
+	return ls.lbls.Hash()
 }
 
 // create update expression
