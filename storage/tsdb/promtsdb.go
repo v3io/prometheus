@@ -259,7 +259,11 @@ func (a v3ioAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error
 }
 
 func (a v3ioAppender) AddFast(lset labels.Labels, ref uint64, t int64, v float64) error {
-	return a.metricsCache.AddFast(ref, t, v)
+	err := a.metricsCache.AddFast(ref, t, v)
+	if err != nil && strings.Contains(err.Error(), "metric not found") {
+		return storage.ErrNotFound
+	}
+	return nil
 }
 
 func (a v3ioAppender) Commit() error   { return nil }
