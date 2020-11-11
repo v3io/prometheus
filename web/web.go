@@ -73,6 +73,7 @@ import (
 	v3ioConfig "github.com/v3io/v3io-tsdb/pkg/config"
 )
 
+
 var (
 	localhostRepresentations = []string{"127.0.0.1", "localhost"}
 
@@ -828,13 +829,15 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 			status.LastConfigTime = time.Unix(int64(toFloat64(mF)), 0)
 		}
 	}
-	db := h.tsdb()
-	startTime := time.Now().UnixNano()
-	status.Stats = db.Head().PostingsCardinalityStats("__name__")
-	status.Duration = fmt.Sprintf("%.3f", float64(time.Now().UnixNano()-startTime)/float64(1e9))
-	status.NumSeries = db.Head().NumSeries()
-	status.MaxTime = db.Head().MaxTime()
-	status.MinTime = db.Head().MaxTime()
+	// TODO: Implement for V3IO (IG-16879)
+	//db := h.tsdb()
+	//startTime := time.Now().UnixNano()
+	status.Stats = &index.PostingsStats{}
+	//status.Stats = db.Head().PostingsCardinalityStats("__name__")
+	//status.Duration = fmt.Sprintf("%.3f", float64(time.Now().UnixNano()-startTime)/float64(1e9))
+	//status.NumSeries = db.Head().NumSeries()
+	//status.MaxTime = db.Head().MaxTime()
+	//status.MinTime = db.Head().MaxTime()
 
 	h.executeTemplate(w, "status.html", status)
 }
