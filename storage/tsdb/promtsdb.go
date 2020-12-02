@@ -140,13 +140,20 @@ func (promQuery *V3ioPromQuerier) Select(params *storage.SelectParams, oms ...*l
 		promQuery.LastTSDBAggregatedAggr = params.Func
 	}
 
+	// In case we can not do aggregations, make sure no step or aggregation window is passed.
+	step,aggrWindow := params.Step, params.AggregationWindow
+	if !promQuery.UseV3ioAggregations(){
+		step = 0
+		aggrWindow = 0
+	}
+
 	selectParams := &pquerier.SelectParams{Name: name,
 		Functions:         function,
-		Step:              params.Step,
+		Step:              step,
 		Filter:            filter,
 		From:              promQuery.mint,
 		To:                promQuery.maxt,
-		AggregationWindow: params.AggregationWindow}
+		AggregationWindow: aggrWindow}
 
 	promQuery.logger.DebugWith("Going to query tsdb", "params", selectParams,
 		"UseAggregates", promQuery.UseAggregates, "UseAggregatesConfig", promQuery.UseAggregatesConfig)
