@@ -22,26 +22,19 @@ podTemplate(label: "${git_project}-${label}", inheritFrom: "jnlp-docker") {
 
             def github_client = new Githubc(git_project_user, git_project, GIT_TOKEN, env.TAG_NAME, this)
             github_client.releaseCi(true) {
-                
+
                 common.notify_slack {
-                        stage("build ${git_project} in dood") {
-                            container('docker-cmd') {
-                                dir("${BUILD_FOLDER}/src/github.com/${git_project}/${git_project}") {
-                                    sh("docker build . -f Dockerfile.multi --tag v3io-prom:${DOCKER_TAG_VERSION}")
-                                }
+                    stage("build ${git_project} in dood") {
+                        container('docker-cmd') {
+                            dir("${BUILD_FOLDER}/src/github.com/${git_project}/${git_project}") {
+                                sh("docker build . -f Dockerfile.multi --tag v3io-prom:${DOCKER_TAG_VERSION}")
                             }
                         }
+                    }
 
-                        stage('push') {
-                            container('docker-cmd') {
-                                dockerx.images_push_multi_registries(["v3io-prom:${DOCKER_TAG_VERSION}"], multi_credentials)
-                            }
-                        }
-
-                        stage('update release status') {
-                            container('jnlp') {
-                                github.update_release_status(git_project, git_project_user, "${TAG_VERSION}", GIT_TOKEN)
-                            }
+                    stage('push') {
+                        container('docker-cmd') {
+                            dockerx.images_push_multi_registries(["v3io-prom:${DOCKER_TAG_VERSION}"], multi_credentials)
                         }
                     }
                 }
