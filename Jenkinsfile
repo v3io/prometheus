@@ -16,8 +16,6 @@ podTemplate(label: "${git_project}-${label}", inheritFrom: "jnlp-docker") {
                 string(credentialsId: git_deploy_user_token, variable: 'GIT_TOKEN')
         ]) {
 
-            def TAG_VERSION
-            def DOCKER_TAG_VERSION
             multi_credentials = [DockerRepo.ARTIFACTORY_IGUAZIO, DockerRepo.DOCKER_HUB, DockerRepo.QUAY_IO, DockerRepo.GCR_IO]
 
             def github_client = new Githubc(git_project_user, git_project, GIT_TOKEN, env.TAG_NAME, this)
@@ -27,14 +25,14 @@ podTemplate(label: "${git_project}-${label}", inheritFrom: "jnlp-docker") {
                     stage("build ${git_project} in dood") {
                         container('docker-cmd') {
                             dir("${BUILD_FOLDER}/src/github.com/${git_project}/${git_project}") {
-                                sh("docker build . -f Dockerfile.multi --tag v3io-prom:${DOCKER_TAG_VERSION}")
+                                sh("docker build . -f Dockerfile.multi --tag v3io-prom:${github_client.tag.docker}")
                             }
                         }
                     }
 
                     stage('push') {
                         container('docker-cmd') {
-                            dockerx.images_push_multi_registries(["v3io-prom:${DOCKER_TAG_VERSION}"], multi_credentials)
+                            dockerx.images_push_multi_registries(["v3io-prom:${github_client.tag.docker}"], multi_credentials)
                         }
                     }
                 }
