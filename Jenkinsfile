@@ -24,7 +24,7 @@ podTemplate(label: "${git_project}-${label}", inheritFrom: "jnlp-docker") {
                 common.notify_slack {
                     stage("build ${git_project} in dood") {
                         container('docker-cmd') {
-                            dir("${BUILD_FOLDER}/src/github.com/${git_project}/${git_project}") {
+                            dir("${BUILD_FOLDER}/src/github.com/${git_project_user}/${git_project}") {
                                 sh("docker build . -f Dockerfile.multi --tag v3io-prom:${github_client.tag.docker}")
                             }
                         }
