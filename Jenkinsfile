@@ -1,3 +1,8 @@
+
+@Library('pipelinex@development') _
+import com.iguazio.pipelinex.DockerRepo
+
+
 label = "${UUID.randomUUID().toString()}"
 BUILD_FOLDER = "/home/jenkins/go"
 git_project = "prometheus"
@@ -10,52 +15,24 @@ podTemplate(label: "${git_project}-${label}", inheritFrom: "jnlp-docker") {
         withCredentials([
                 string(credentialsId: git_deploy_user_token, variable: 'GIT_TOKEN')
         ]) {
-            def TAG_VERSION
-            def DOCKER_TAG_VERSION
-            pipelinex = library(identifier: 'pipelinex@development', retriever: modernSCM(
-                    [$class       : 'GitSCMSource',
-                     credentialsId: git_deploy_user_private_key,
-                     remote       : "git@github.com:iguazio/pipelinex.git"])).com.iguazio.pipelinex
-            multi_credentials = [pipelinex.DockerRepo.ARTIFACTORY_IGUAZIO, pipelinex.DockerRepo.DOCKER_HUB, pipelinex.DockerRepo.QUAY_IO, pipelinex.DockerRepo.GCR_IO]
 
-            common.notify_slack {
-                stage('get tag data') {
-                    container('jnlp') {
-                        TAG_VERSION = github.get_tag_version(TAG_NAME)
-                        DOCKER_TAG_VERSION = github.get_docker_tag_version(TAG_NAME)
+            multi_credentials = [DockerRepo.ARTIFACTORY_IGUAZIO, DockerRepo.DOCKER_HUB, DockerRepo.QUAY_IO, DockerRepo.GCR_IO]
 
-                        echo "$TAG_VERSION"
-                        echo "$DOCKER_TAG_VERSION"
-                    }
-                }
+            def github_client = new Githubc(git_project_user, git_project, GIT_TOKEN, env.TAG_NAME, this)
+            github_client.releaseCi(true) {
 
-                if (github.check_tag_expiration(git_project, git_project_user, TAG_VERSION, GIT_TOKEN)) {
-                    stage('prepare sources') {
-                        container('jnlp') {
-                            dir("${BUILD_FOLDER}/src/github.com/${git_project}/${git_project}") {
-                                git(changelog: false, credentialsId: git_deploy_user_private_key, poll: false, url: "git@github.com:${git_project_user}/${git_project}.git")
-                                sh("git checkout ${TAG_VERSION}")
-                            }
-                        }
-                    }
-
+                common.notify_slack {
                     stage("build ${git_project} in dood") {
                         container('docker-cmd') {
-                            dir("${BUILD_FOLDER}/src/github.com/${git_project}/${git_project}") {
-                                sh("docker build . -f Dockerfile.multi --tag v3io-prom:${DOCKER_TAG_VERSION}")
+                            dir("${BUILD_FOLDER}/src/github.com/${git_project_user}/${git_project}") {
+                                sh("docker build . -f Dockerfile.multi --tag v3io-prom:${github_client.tag.docker}")
                             }
                         }
                     }
 
                     stage('push') {
                         container('docker-cmd') {
-                            dockerx.images_push_multi_registries(["v3io-prom:${DOCKER_TAG_VERSION}"], multi_credentials)
-                        }
-                    }
-
-                    stage('update release status') {
-                        container('jnlp') {
-                            github.update_release_status(git_project, git_project_user, "${TAG_VERSION}", GIT_TOKEN)
+                            dockerx.images_push_multi_registries(["v3io-prom:${github_client.tag.docker}"], multi_credentials)
                         }
                     }
                 }
