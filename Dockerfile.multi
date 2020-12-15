@@ -18,8 +18,10 @@ COPY --from=builder /go/src/github.com/prometheus/prometheus/console_libraries/ 
 COPY --from=builder /go/src/github.com/prometheus/prometheus/consoles/                             /usr/share/prometheus/consoles/
 
 RUN ln -s /usr/share/prometheus/console_libraries /usr/share/prometheus/consoles/ /etc/prometheus/
+
+# should be "chown -R nobody:nogroup etc/prometheus /prometheu" but latest busybox release broke the name convention
 RUN mkdir -p /prometheus && \
-    chown -R nobody:nogroup etc/prometheus /prometheus
+    chown -R 65534:65534 etc/prometheus /prometheus
 
 USER       nobody
 EXPOSE     9090
