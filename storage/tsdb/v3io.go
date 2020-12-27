@@ -93,11 +93,11 @@ func (s *ReadyStorage) Set(db *tsdb.DB, startTimeMargin int64) {
 	s.v3ioConfig = v3ioConfig
 
 	// watch configuration file for changes
-	s.watchConfigForChanges(configPath)
+	/*s.watchConfigForChanges(configPath)
 	if err != nil {
 		s.error = errors.Wrap(err, "failed to start config watch")
 		return
-	}
+	}*/
 
 	s.error = nil
 }
