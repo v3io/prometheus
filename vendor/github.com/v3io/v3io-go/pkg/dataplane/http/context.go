@@ -312,6 +312,16 @@ func (c *context) GetItemsSync(getItemsInput *v3io.GetItemsInput) (*v3io.Respons
 		body["SortKeyRangeEnd"] = getItemsInput.SortKeyRangeEnd
 	}
 
+	if getItemsInput.AllowObjectScatter != "" {
+		body["AllowObjectScatter"] = getItemsInput.AllowObjectScatter
+	}
+	if getItemsInput.ReturnData != "" {
+		body["ReturnData"] = getItemsInput.ReturnData
+	}
+	if getItemsInput.DataMaxSize != 0 {
+		body["DataMaxSize"] = getItemsInput.DataMaxSize
+	}
+
 	marshalledBody, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
@@ -519,6 +529,14 @@ func (c *context) GetObjectSync(getObjectInput *v3io.GetObjectInput) (*v3io.Resp
 		headers["Range"] = fmt.Sprintf("bytes=%v-%v", getObjectInput.Offset, getObjectInput.Offset+getObjectInput.NumBytes-1)
 	}
 
+	if getObjectInput.CtimeSec > 0 {
+		if headers == nil {
+			headers = make(map[string]string)
+		}
+		headers["ctime-sec"] = fmt.Sprintf("%d", getObjectInput.CtimeSec)
+		headers["ctime-nsec"] = fmt.Sprintf("%d", getObjectInput.CtimeNsec)
+	}
+
 	return c.sendRequest(&getObjectInput.DataPlaneInput,
 		http.MethodGet,
 		getObjectInput.Path,
@@ -550,6 +568,28 @@ func (c *context) PutObjectSync(putObjectInput *v3io.PutObjectInput) error {
 		"",
 		headers,
 		putObjectInput.Body,
+		true)
+
+	return err
+}
+
+// UpdateObjectSync
+func (c *context) UpdateObjectSync(updateObjectInput *v3io.UpdateObjectInput) error {
+	headers := map[string]string{
+		"X-v3io-function": "DirSetAttr",
+	}
+
+	marshaledDirAttributes, err := json.Marshal(updateObjectInput.DirAttributes)
+	if err != nil {
+		return err
+	}
+
+	_, err = c.sendRequest(&updateObjectInput.DataPlaneInput,
+		http.MethodPut,
+		updateObjectInput.Path,
+		"",
+		headers,
+		marshaledDirAttributes,
 		true)
 
 	return err
@@ -815,6 +855,32 @@ func (c *context) PutRecordsSync(putRecordsInput *v3io.PutRecordsInput) (*v3io.R
 	return response, nil
 }
 
+// PutChunk
+func (c *context) PutChunk(putChunkInput *v3io.PutChunkInput,
+	context interface{},
+	responseChan chan *v3io.Response) (*v3io.Request, error) {
+	return c.sendRequestToWorker(putChunkInput, context, responseChan)
+}
+
+// PutChunkSync
+func (c *context) PutChunkSync(putChunkInput *v3io.PutChunkInput) error {
+
+	buffer, err := json.Marshal(putChunkInput)
+	if err != nil {
+		return err
+	}
+
+	_, err = c.sendRequest(&putChunkInput.DataPlaneInput,
+		http.MethodPost,
+		putChunkInput.Path,
+		"",
+		putChunkHeaders,
+		buffer,
+		true)
+
+	return err
+}
+
 // GetRecords
 func (c *context) GetRecords(getRecordsInput *v3io.GetRecordsInput,
 	context interface{},
@@ -1006,12 +1072,21 @@ func (c *context) sendRequest(dataPlaneInput *v3io.DataPlaneInput,
 	// 	"body-length", len(body))
 
 	if c.connSemaphore != nil {
-		c.connSemaphore.Acquire(goctx.TODO(), 1)
+		err = c.connSemaphore.Acquire(goctx.TODO(), 1)
+		if err != nil {
+			goto cleanup
+		}
 	}
-	if dataPlaneInput.Timeout <= 0 {
-		err = c.httpClient.Do(request, response.HTTPResponse)
-	} else {
-		err = c.httpClient.DoTimeout(request, response.HTTPResponse, dataPlaneInput.Timeout)
+	// Retry on ErrConnectionClosed due to https://github.com/valyala/fasthttp/issues/189#issuecomment-254538245
+	for i := 0; i < 8; i++ {
+		if dataPlaneInput.Timeout <= 0 {
+			err = c.httpClient.Do(request, response.HTTPResponse)
+		} else {
+			err = c.httpClient.DoTimeout(request, response.HTTPResponse, dataPlaneInput.Timeout)
+		}
+		if err != fasthttp.ErrConnectionClosed {
+			break
+		}
 	}
 	if c.connSemaphore != nil {
 		c.connSemaphore.Release(1)
@@ -1113,8 +1188,7 @@ func (c *context) encodeTypedAttributes(attributes map[string]interface{}) (map[
 		case bool:
 			typedAttributes[attributeName]["BOOL"] = value
 		case time.Time:
-			nanos := value.UnixNano()
-			typedAttributes[attributeName]["TS"] = fmt.Sprintf("%v:%v", nanos/1000000000, nanos%1000000000)
+			typedAttributes[attributeName]["TS"] = fmt.Sprintf("%v:%v", value.Unix(), value.Nanosecond())
 		}
 	}
 
@@ -1266,6 +1340,8 @@ func (c *context) workerEntry(workerIndex int) {
 			response, err = c.GetRecordsSync(typedInput)
 		case *v3io.PutRecordsInput:
 			response, err = c.PutRecordsSync(typedInput)
+		case *v3io.PutChunkInput:
+			err = c.PutChunkSync(typedInput)
 		case *v3io.SeekShardInput:
 			response, err = c.SeekShardSync(typedInput)
 		case *v3io.GetContainersInput:
@@ -1377,6 +1453,7 @@ func (c *context) getItemsParseJSONResponse(response *v3io.Response, getItemsInp
 		Items            []map[string]map[string]interface{}
 		NextMarker       string
 		LastItemIncluded string
+		Scattered        string
 	}{}
 
 	// unmarshal the body into an ad hoc structure
@@ -1385,8 +1462,11 @@ func (c *context) getItemsParseJSONResponse(response *v3io.Response, getItemsInp
 		return nil, err
 	}
 
+	lastItemIncluded, _ := strconv.ParseBool(getItemsResponse.LastItemIncluded)
+	scattered, _ := strconv.ParseBool(getItemsResponse.Scattered)
+
 	//validate getItems response to avoid infinite loop
-	if getItemsResponse.LastItemIncluded != "TRUE" && (getItemsResponse.NextMarker == "" || getItemsResponse.NextMarker == getItemsInput.Marker) {
+	if !lastItemIncluded && (getItemsResponse.NextMarker == "" || getItemsResponse.NextMarker == getItemsInput.Marker) {
 		errMsg := fmt.Sprintf("Invalid getItems response: lastItemIncluded=false and nextMarker='%s', "+
 			"startMarker='%s', probably due to object size bigger than 2M. Query is: %+v", getItemsResponse.NextMarker, getItemsInput.Marker, getItemsInput)
 		c.logger.Warn(errMsg)
@@ -1394,7 +1474,8 @@ func (c *context) getItemsParseJSONResponse(response *v3io.Response, getItemsInp
 
 	getItemsOutput := v3io.GetItemsOutput{
 		NextMarker: getItemsResponse.NextMarker,
-		Last:       getItemsResponse.LastItemIncluded == "TRUE",
+		Last:       lastItemIncluded,
+		Scattered:  scattered,
 	}
 
 	// iterate through the items and decode them
@@ -1418,9 +1499,11 @@ func (c *context) getItemsParseCAPNPResponse(response *v3io.Response, withWildca
 		return nil, errors.Errorf("getItemsCapnp: Got only %v capnp sections. Expecting at least 2", len(capnpSections))
 	}
 	cookie := string(response.HeaderPeek("X-v3io-cookie"))
+	scattered := string(response.HeaderPeek("X-v3io-scattered"))
 	getItemsOutput := v3io.GetItemsOutput{
 		NextMarker: cookie,
 		Last:       len(cookie) == 0,
+		Scattered:  scattered == "TRUE",
 	}
 	if len(capnpSections) < 2 {
 		return nil, errors.Errorf("getItemsCapnp: Got only %v capnp sections. Expecting at least 2", len(capnpSections))
@@ -1550,4 +1633,52 @@ func parseMtimeHeader(response *v3io.Response) (int, int, error) {
 func trimAndParseInt(str string) (int, error) {
 	trimmed := strings.TrimSpace(str)
 	return strconv.Atoi(trimmed)
+}
+
+// PutOOSObject
+func (c *context) PutOOSObject(putOOSObjectInput *v3io.PutOOSObjectInput,
+	context interface{},
+	responseChan chan *v3io.Response) (*v3io.Request, error) {
+	return c.sendRequestToWorker(putOOSObjectInput, context, responseChan)
+}
+
+// PutOOSObjectSync
+func (c *context) PutOOSObjectSync(putOOSObjectInput *v3io.PutOOSObjectInput) error {
+
+	var iovecSizes strings.Builder
+
+	// concatenate header + data lengths with ',' separator
+	totalSize := len(putOOSObjectInput.Header)
+
+	// heuristics: 6 chars per number + char for delimiter) * (len(Data) + 1) - 1
+	iovecSizes.Grow(7*(len(putOOSObjectInput.Data)+1) - 1)
+	iovecSizes.WriteString(strconv.Itoa(totalSize))
+
+	for _, ioVec := range putOOSObjectInput.Data {
+		totalSize += len(ioVec)
+		iovecSizes.WriteString(",")
+		iovecSizes.WriteString(strconv.Itoa(len(ioVec)))
+	}
+	// concatenate the header + data to buffer
+	buffer := bytes.NewBuffer(make([]byte, 0, totalSize))
+	buffer.Write(putOOSObjectInput.Header)
+
+	for _, ioVec := range putOOSObjectInput.Data {
+		buffer.Write(ioVec)
+	}
+
+	headers := putOOSObjectHeaders
+	headers["slice"] = strconv.Itoa(putOOSObjectInput.SliceID)
+	headers["io-vec-num"] = strconv.Itoa(len(putOOSObjectInput.Data) + 1)
+	headers["io-vec-sizes"] = iovecSizes.String()
+
+	_, err := c.sendRequest(&putOOSObjectInput.DataPlaneInput,
+		http.MethodPut,
+		putOOSObjectInput.Path,
+		"",
+		headers,
+		buffer.Bytes(),
+		true)
+
+	return err
 }

@@ -333,15 +333,15 @@ github.com/soheilhy/cmux
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/require
 github.com/stretchr/testify/suite
-# github.com/v3io/frames v0.7.33 => github.com/v3io/frames v0.8.1
+# github.com/v3io/frames v0.8.10 => github.com/v3io/frames v0.8.10
 github.com/v3io/frames
 github.com/v3io/frames/pb
-# github.com/v3io/v3io-go v0.1.9
+# github.com/v3io/v3io-go v0.2.5-0.20210113095419-6c806b8d5186
 github.com/v3io/v3io-go/pkg/dataplane
 github.com/v3io/v3io-go/pkg/dataplane/http
 github.com/v3io/v3io-go/pkg/dataplane/schemas/node/common
 github.com/v3io/v3io-go/pkg/errors
-# github.com/v3io/v3io-tsdb v0.11.2 => github.com/v3io/v3io-tsdb v0.11.6
+# github.com/v3io/v3io-tsdb v0.11.6 => github.com/v3io/v3io-tsdb v0.11.7
 github.com/v3io/v3io-tsdb/internal/pkg/performance
 github.com/v3io/v3io-tsdb/pkg/aggregate
 github.com/v3io/v3io-tsdb/pkg/appender
