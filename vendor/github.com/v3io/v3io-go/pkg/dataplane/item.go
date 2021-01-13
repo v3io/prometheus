@@ -17,7 +17,10 @@ limitations under the License.
 package v3io
 
 import (
+	"bytes"
+	"encoding/binary"
 	"strconv"
+	"strings"
 
 	"github.com/v3io/v3io-go/pkg/errors"
 )
@@ -79,4 +82,58 @@ func (i Item) GetFieldUint64(name string) (uint64, error) {
 	default:
 		return 0, v3ioerrors.ErrInvalidTypeConversion
 	}
+}
+
+// For internal use only - DO NOT USE!
+func (i Item) GetShard() (int, []*ItemChunkData, *ItemChunkMetadata, *ItemCurrentChunkMetadata, error) {
+	const streamDataPrefix = "__data_stream["
+	const streamMetadataPrefix = "__data_stream_metadata["
+	const offsetPrefix = "__data_stream[0000]["
+
+	var chunkDataArray []*ItemChunkData
+	chunkMetaData := ItemChunkMetadata{}
+	currentChunkMetadata := ItemCurrentChunkMetadata{}
+	var chunkID int
+
+	for k, v := range i {
+		if strings.HasPrefix(k, streamDataPrefix) {
+			chunkID, _ = strconv.Atoi(k[len(streamDataPrefix):][:4])
+			offset, _ := strconv.ParseUint(k[len(offsetPrefix):][:16], 10, 64)
+			data, ok := v.([]byte)
+			if !ok {
+				return 0, nil, nil, nil, v3ioerrors.ErrInvalidTypeConversion
+			}
+			streamData := ItemChunkData{Offset: offset, Data: &data}
+			chunkDataArray = append(chunkDataArray, &streamData)
+		}
+
+		if strings.HasPrefix(k, streamMetadataPrefix) {
+			chunkID, _ = strconv.Atoi(k[len(streamMetadataPrefix):][:4])
+			metadata, ok := v.([]byte)
+			if !ok {
+				return 0, nil, nil, nil, v3ioerrors.ErrInvalidTypeConversion
+			}
+
+			buf := bytes.NewBuffer(metadata[8:64])
+			err := binary.Read(buf, binary.LittleEndian, &chunkMetaData)
+			if err != nil {
+				return 0, nil, nil, nil, err
+			}
+
+			buf = bytes.NewBuffer(metadata[0:1])
+			var isCurrent bool
+			err = binary.Read(buf, binary.LittleEndian, &isCurrent)
+			if err != nil {
+				return 0, nil, nil, nil, err
+			}
+			if isCurrent {
+				buf = bytes.NewBuffer(metadata[64:110])
+				err = binary.Read(buf, binary.LittleEndian, &currentChunkMetadata)
+				if err != nil {
+					return 0, nil, nil, nil, err
+				}
+			}
+		}
+	}
+	return chunkID, chunkDataArray, &chunkMetaData, &currentChunkMetadata, nil
 }

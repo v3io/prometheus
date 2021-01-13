@@ -181,9 +181,11 @@ type ContainerInfo struct {
 
 type GetObjectInput struct {
 	DataPlaneInput
-	Path     string
-	Offset   int
-	NumBytes int
+	Path      string
+	Offset    int
+	NumBytes  int
+	CtimeSec  int
+	CtimeNsec int
 }
 
 type PutObjectInput struct {
@@ -197,6 +199,24 @@ type PutObjectInput struct {
 type DeleteObjectInput struct {
 	DataPlaneInput
 	Path string
+}
+
+type UpdateObjectInput struct {
+	DataPlaneInput
+	Path          string
+	DirAttributes *DirAttributes
+}
+
+type DirAttributes struct {
+	Mode      int `json:"mode,omitempty"`
+	UID       int `json:"uid"`
+	GID       int `json:"gid"`
+	AtimeSec  int `json:"atime.sec,omitempty"`
+	AtimeNSec int `json:"atime.nsec"`
+	CtimeSec  int `json:"ctime.sec,omitempty"`
+	CtimeNSec int `json:"ctime.nsec"`
+	MtimeSec  int `json:"mtime.sec,omitempty"`
+	MtimeNSec int `json:"mtime.nsec"`
 }
 
 //
@@ -269,6 +289,9 @@ type GetItemsInput struct {
 	TotalSegments       int
 	SortKeyRangeStart   string
 	SortKeyRangeEnd     string
+	AllowObjectScatter  string
+	ReturnData          string
+	DataMaxSize         int
 	RequestJSONResponse bool `json:"RequestJsonResponse"`
 }
 
@@ -276,6 +299,7 @@ type GetItemsOutput struct {
 	DataPlaneOutput
 	Last       bool
 	NextMarker string
+	Scattered  bool
 	Items      []Item
 }
 
@@ -347,6 +371,33 @@ type PutRecordsOutput struct {
 	Records           []PutRecordResult
 }
 
+type ChunkMetadata struct {
+	ChunkSeqNumber       uint64 `json:"ChunkSequenceNumber"`
+	LengthInBytes        uint64 `json:"LengthInBytes"`
+	FirstRecordSeqNumber uint64 `json:"FirstRecordSequenceNumber"`
+	FirstRecordTimeSecs  uint64 `json:"FirstRecordTimeSec"`
+	FirstRecordTimeNSecs uint64 `json:"FirstRecordTimeNSec"`
+}
+
+type CurrentChunkMetadata struct {
+	ChunkSeqNumber       uint32 `json:"ChunkSequenceNumber"`
+	OffsetAfterJob       uint64 `json:"OffsetAfterJob"`
+	SeqNumberAfterJob    uint64 `json:"SequenceNumberAfterJob"`
+	FirstRecordTimeSec   uint32 `json:"FirstRecordTimeSec"`
+	LatestRecordTimeSec  uint64 `json:"LatestRecordTimeSec"`
+	LatestRecordTimeNSec uint64 `json:"LatestRecordTimeNSec"`
+}
+
+type PutChunkInput struct {
+	DataPlaneInput       `json:"-"`
+	Path                 string                `json:"-"`
+	ChunkSeqNumber       int                   `json:"ChunkSequenceNumber,omitempty"`
+	Offset               uint64                `json:"Offset,omitempty"`
+	Data                 []byte                `json:"Data,omitempty"`
+	ChunksMetadata       []*ChunkMetadata      `json:"Metadata,omitempty"`
+	CurrentChunkMetadata *CurrentChunkMetadata `json:"CurrentMetadata,omitempty"`
+}
+
 type SeekShardInput struct {
 	DataPlaneInput
 	Path                   string
@@ -382,4 +433,39 @@ type GetRecordsOutput struct {
 	MSecBehindLatest    int
 	RecordsBehindLatest int
 	Records             []GetRecordsResult
+}
+
+type PutOOSObjectInput struct {
+	DataPlaneInput
+	Path    string
+	SliceID int
+	Header  []byte
+	Data    [][]byte
+}
+
+type ItemChunkMetadata struct {
+	OSSID                uint32
+	OSDID                uint32
+	StoredHandle         uint64
+	ChunkSeqNumber       uint64
+	FirstRecordSeqNumber uint64
+	FirstRecordTsSec     uint64
+	FirstRecordTsNSec    uint64
+	LengthInBytes        uint64
+}
+
+type ItemCurrentChunkMetadata struct {
+	NextRecordSeqNumber         uint64
+	CurrentChunkLengthBytes     uint64
+	CurrentChunkSeqNumber       uint32
+	ChunkGranularity            uint32
+	NumStoredChunks             uint16
+	FirstRecordOnChunkSec       uint32
+	LatestRecordArrivalTimeSec  uint64
+	LatestRecordArrivalTimeNSec uint64
+}
+
+type ItemChunkData struct {
+	Offset uint64
+	Data   *[]byte
 }

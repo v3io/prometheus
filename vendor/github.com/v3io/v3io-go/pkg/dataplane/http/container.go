@@ -128,6 +128,12 @@ func (c *container) PutObjectSync(putObjectInput *v3io.PutObjectInput) error {
 	return c.session.context.PutObjectSync(putObjectInput)
 }
 
+// UpdateObjectSync
+func (c *container) UpdateObjectSync(updateObjectInput *v3io.UpdateObjectInput) error {
+	c.populateInputFields(&updateObjectInput.DataPlaneInput)
+	return c.session.context.UpdateObjectSync(updateObjectInput)
+}
+
 // DeleteObject
 func (c *container) DeleteObject(deleteObjectInput *v3io.DeleteObjectInput,
 	context interface{},
@@ -252,6 +258,18 @@ func (c *container) PutRecordsSync(putRecordsInput *v3io.PutRecordsInput) (*v3io
 	return c.session.context.PutRecordsSync(putRecordsInput)
 }
 
+// PutChunk
+func (c *container) PutChunk(putChunkInput *v3io.PutChunkInput, context interface{}, responseChan chan *v3io.Response) (*v3io.Request, error) {
+	c.populateInputFields(&putChunkInput.DataPlaneInput)
+	return c.session.context.PutChunk(putChunkInput, context, responseChan)
+}
+
+// PutChunkSync
+func (c *container) PutChunkSync(putChunkInput *v3io.PutChunkInput) error {
+	c.populateInputFields(&putChunkInput.DataPlaneInput)
+	return c.session.context.PutChunkSync(putChunkInput)
+}
+
 // GetRecords
 func (c *container) GetRecords(getRecordsInput *v3io.GetRecordsInput, context interface{}, responseChan chan *v3io.Response) (*v3io.Request, error) {
 	c.populateInputFields(&getRecordsInput.DataPlaneInput)
@@ -262,4 +280,18 @@ func (c *container) GetRecords(getRecordsInput *v3io.GetRecordsInput, context in
 func (c *container) GetRecordsSync(getRecordsInput *v3io.GetRecordsInput) (*v3io.Response, error) {
 	c.populateInputFields(&getRecordsInput.DataPlaneInput)
 	return c.session.context.GetRecordsSync(getRecordsInput)
+}
+
+// PutOOSObject
+func (c *container) PutOOSObject(putOOSObjectInput *v3io.PutOOSObjectInput,
+	context interface{},
+	responseChan chan *v3io.Response) (*v3io.Request, error) {
+	c.populateInputFields(&putOOSObjectInput.DataPlaneInput)
+	return c.session.context.PutOOSObject(putOOSObjectInput, context, responseChan)
+}
+
+// PutOOSObjectSync
+func (c *container) PutOOSObjectSync(putOOSObjectInput *v3io.PutOOSObjectInput) error {
+	c.populateInputFields(&putOOSObjectInput.DataPlaneInput)
+	return c.session.context.PutOOSObjectSync(putOOSObjectInput)
 }
