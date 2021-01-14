@@ -61,6 +61,9 @@ type Container interface {
 	// PutObjectSync
 	PutObjectSync(*PutObjectInput) error
 
+	// UpdateObjectSync
+	UpdateObjectSync(*UpdateObjectInput) error
+
 	// DeleteObject
 	DeleteObject(*DeleteObjectInput, interface{}, chan *Response) (*Request, error)
 
@@ -135,9 +138,25 @@ type Container interface {
 	// PutRecordsSync
 	PutRecordsSync(*PutRecordsInput) (*Response, error)
 
+	// PutChunk
+	PutChunk(*PutChunkInput, interface{}, chan *Response) (*Request, error)
+
+	// PutChunkSync
+	PutChunkSync(input *PutChunkInput) error
+
 	// GetRecords
 	GetRecords(*GetRecordsInput, interface{}, chan *Response) (*Request, error)
 
 	// GetRecordsSync
 	GetRecordsSync(*GetRecordsInput) (*Response, error)
+
+	//
+	// OOS
+	//
+
+	// PutOOSObject
+	PutOOSObject(*PutOOSObjectInput, interface{}, chan *Response) (*Request, error)
+
+	// PutOOSObjectSync
+	PutOOSObjectSync(*PutOOSObjectInput) error
 }

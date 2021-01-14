@@ -48,8 +48,8 @@ type Config struct {
 	Workers            int `json:"workers"`
 	UpdateWorkersPerVN int `json:"updateWorkersPerVN"`
 
-	QuerierCacheSize                 int  `json:"querierCacheSize"`
-	TsdbLoadPartitionsFromSchemaAttr bool `json:"tsdbLoadPartitionsFromSchemaAttr"`
+	QuerierCacheSize    int `json:"querierCacheSize"`
+	TsdbMetricCacheSize int `json:"tsdbMetricCacheSize"`
 
 	// History server related configs
 	WriteMonitoringLogsTimeoutSeconds int    `json:writeMonitoringLogsTimeoutSeconds`
@@ -142,6 +142,7 @@ type BackendConfig struct {
 	V3ioGoRequestChanLength int    `json:"v3ioGoRequestChanLength"`
 	MaxConnections          int    `json:"maxConnections"`
 	DialTimeoutSeconds      int    `json:"dialTimeoutSeconds"`
+	MaxRecordsInferSchema   int    `json:"maxRecordsInferSchema"`
 
 	// backend specific options
 	Options map[string]interface{} `json:"options"`
@@ -231,5 +232,9 @@ func initBackendDefaults(cfg *BackendConfig, framesConfig *Config) {
 
 	if cfg.V3ioGoRequestChanLength == 0 {
 		cfg.V3ioGoRequestChanLength = cfg.V3ioGoWorkers * 256
+	}
+
+	if cfg.MaxRecordsInferSchema == 0 {
+		cfg.MaxRecordsInferSchema = 10
 	}
 }

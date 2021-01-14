@@ -12,6 +12,8 @@ const (
 	getRecordsFunctionName     = "GetRecords"
 	seekShardsFunctionName     = "SeekShard"
 	getClusterMDFunctionName   = "GetClusterMD"
+	putOOSObjectFunctionName   = "OosRun"
+	PutChunkFunctionName       = "PutChunk"
 )
 
 // headers for put item
@@ -69,6 +71,12 @@ var putRecordsHeaders = map[string]string{
 	"X-v3io-function": putRecordsFunctionName,
 }
 
+// headers for put chunks
+var putChunkHeaders = map[string]string{
+	"Content-Type":    "application/json",
+	"X-v3io-function": PutChunkFunctionName,
+}
+
 // headers for put records
 var getRecordsHeaders = map[string]string{
 	"Content-Type":    "application/json",
@@ -79,6 +87,12 @@ var getRecordsHeaders = map[string]string{
 var seekShardsHeaders = map[string]string{
 	"Content-Type":    "application/json",
 	"X-v3io-function": seekShardsFunctionName,
+}
+
+// headers for OOS put object
+var putOOSObjectHeaders = map[string]string{
+	"Content-Type":    "application/json",
+	"X-v3io-function": putOOSObjectFunctionName,
 }
 
 // map between SeekShardInputType and its encoded counterpart
