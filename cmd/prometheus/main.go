@@ -256,6 +256,11 @@ func main() {
 		os.Exit(2)
 	}
 
+	err = cfg.promlogConfig.Format.Set("json")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, errors.Wrapf(err, "could not set log format json"))
+		os.Exit(2)
+	}
 	logger := promlog.New(&cfg.promlogConfig)
 
 	cfg.web.ExternalURL, err = computeExternalURL(cfg.prometheusURL, cfg.web.ListenAddress)

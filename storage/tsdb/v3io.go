@@ -56,7 +56,7 @@ type ReadyStorage struct {
 func (s *ReadyStorage) SetUseV3ioAggregations(useV3ioAggregations bool) {
 	s.useV3ioAggregations = useV3ioAggregations
 	configPath := s.getConfigPath()
-	s.logger.Log("msg", "Creating v3io adapter after changing v3io aggregation indicator", "configPath", configPath, "useV3ioAggregations", useV3ioAggregations)
+	level.Info(s.logger).Log("msg", "Creating v3io adapter after changing v3io aggregation indicator", "configPath", configPath, "useV3ioAggregations", useV3ioAggregations)
 
 	// create the initial v3io adapter
 	adapter, _, err := s.createV3ioPromAdapater(configPath)
@@ -81,7 +81,7 @@ func (s *ReadyStorage) Set(db *tsdb.DB, startTimeMargin int64) {
 
 	// get the config path
 	configPath := s.getConfigPath()
-	s.logger.Log("msg", "Creating initial v3io adapter", "configPath", configPath)
+	level.Info(s.logger).Log("msg", "Creating initial v3io adapter", "configPath", configPath)
 
 	// create the initial v3io adapter
 	adapter, v3ioConfig, err := s.createV3ioPromAdapater(configPath)
@@ -122,7 +122,7 @@ func (s *ReadyStorage) Config() *config.V3ioConfig {
 
 // Querier implements the Storage interface.
 func (s *ReadyStorage) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-	s.logger.Log("msg", "Querier requested", "mint", mint, "maxt", maxt)
+	level.Info(s.logger).Log("msg", "Querier requested", "mint", mint, "maxt", maxt)
 
 	if s.error != nil {
 		return nil, errors.Wrap(s.error, "cannot return a querier without an adapter")
@@ -137,7 +137,7 @@ func (s *ReadyStorage) Querier(ctx context.Context, mint, maxt int64) (storage.Q
 
 // Appender implements the Storage interface.
 func (s *ReadyStorage) Appender() (storage.Appender, error) {
-	s.logger.Log("msg", "Appender requested")
+	level.Info(s.logger).Log("msg", "Appender requested")
 
 	if s.error != nil {
 		return nil, errors.Wrap(s.error, "cannot return an appender without an adapter")
@@ -168,7 +168,7 @@ func (s *ReadyStorage) getConfigPath() string {
 }
 
 func (s *ReadyStorage) watchConfigForChanges(configPath string) error {
-	s.logger.Log("msg", "Starting to watch configuration for changes", "configPath", configPath)
+	level.Info(s.logger).Log("msg", "Starting to watch configuration for changes", "configPath", configPath)
 
 	// get initial file mtime
 	lastConfigFileInfo, err := os.Stat(configPath)
@@ -195,7 +195,7 @@ func (s *ReadyStorage) watchConfigForChanges(configPath string) error {
 			if lastConfigFileInfo.ModTime() != currentConfigFileInfo.ModTime() {
 				lastConfigFileInfo = currentConfigFileInfo
 
-				s.logger.Log("msg", "Config file modification detected, recreating adapter", "configPath", configPath)
+				level.Debug(s.logger).Log("msg", "Config file modification detected, recreating adapter", "configPath", configPath)
 
 				config.UpdateConfig(configPath)
 				newV3ioPromAdapter, _, err := s.createV3ioPromAdapater(configPath)
@@ -209,7 +209,7 @@ func (s *ReadyStorage) watchConfigForChanges(configPath string) error {
 			}
 		}
 
-		s.logger.Log("msg", "Stopping config file change watch")
+		level.Debug(s.logger).Log("msg", "Stopping config file change watch")
 	}()
 
 	return nil
@@ -223,11 +223,11 @@ func (s *ReadyStorage) createV3ioPromAdapater(configPath string) (*V3ioPromAdapt
 
 	// if the disabled flag is set, don't create an adapter
 	if loadedConfig.Disabled {
-		s.logger.Log("msg", "Adapter is disabled, not creating")
+		level.Info(s.logger).Log("msg", "Adapter is disabled, not creating")
 		return nil, nil, nil
 	}
 
-	s.logger.Log("msg", "Creating v3io adapter", "config", loadedConfig.String())
+	level.Info(s.logger).Log("msg", "Creating v3io adapter", "config", loadedConfig.String())
 
 	adapter, err := NewV3ioProm(loadedConfig, nil)
 	adapter.SetUseV3ioAggregations(s.useV3ioAggregations)
