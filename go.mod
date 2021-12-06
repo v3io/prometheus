@@ -40,7 +40,7 @@ require (
 	github.com/shurcooL/vfsgen v0.0.0-20181202132449-6a9ea43bcacd
 	github.com/soheilhy/cmux v0.1.4
 	github.com/stretchr/testify v1.4.0
-	github.com/v3io/v3io-tsdb v0.13.0
+	github.com/v3io/v3io-tsdb v0.13.1
 	golang.org/x/net v0.0.0-20190724013045-ca1201d0de80
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
 	golang.org/x/sync v0.0.0-20200317015054-43a5402ce75a
@@ -61,8 +61,8 @@ require (
 
 replace (
 	github.com/golang/lint => golang.org/x/lint v0.0.0-20190409202823-959b441ac422
-	github.com/v3io/frames => github.com/v3io/frames v0.10.0
-	github.com/v3io/v3io-tsdb => github.com/v3io/v3io-tsdb v0.13.0
+	github.com/v3io/frames => github.com/v3io/frames v0.10.2
+	github.com/v3io/v3io-tsdb => github.com/v3io/v3io-tsdb v0.13.1
 	google.golang.org/grpc => google.golang.org/grpc v1.19.1
 	k8s.io/klog => github.com/simonpasquier/klog-gokit v0.1.0
 )
